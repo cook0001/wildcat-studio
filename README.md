@@ -13,14 +13,17 @@
 
 Pre-compiled standalone installers are available on the **[Releases](https://github.com/cook0001/wildcat-studio/releases)** page:
 
-| Operating System | Architecture | Package Format | Download Link |
+| Operating System | Architecture | Package Format | Direct Download Link |
 | :--- | :--- | :--- | :--- |
-| **macOS** | Apple Silicon (M1/M2/M3/M4) & Intel (x86_64) | Universal `.dmg` | [Download macOS Universal DMG](https://github.com/cook0001/wildcat-studio/releases/latest) |
-| **Windows** | Windows 10 / 11 (64-bit) | `.exe` / `.msi` Installer | [Download Windows Installer](https://github.com/cook0001/wildcat-studio/releases/latest) |
-| **Linux** | Modern 64-bit Linux (Ubuntu, Debian, Fedora, Arch) | `.deb` / `.AppImage` | [Download Linux Packages](https://github.com/cook0001/wildcat-studio/releases/latest) |
+| **macOS** | Apple Silicon (M1/M2/M3/M4) & Intel (x86_64) | Universal `.dmg` (7.2 MB) | [📥 Download macOS Universal DMG](https://github.com/cook0001/wildcat-studio/releases/download/v1.0.0/Wildcat-Studio-v1.0.0-universal.dmg) |
+| **Windows** | Windows 10 / 11 (64-bit) | `.exe` Setup (3.2 MB) | [📥 Download Windows Setup (.exe)](https://github.com/cook0001/wildcat-studio/releases/download/v1.0.0/Wildcat.Studio_1.0.0_x64-setup.exe) |
+| **Windows** | Windows 10 / 11 (64-bit) | `.msi` Package (3.8 MB) | [📥 Download Windows MSI (.msi)](https://github.com/cook0001/wildcat-studio/releases/download/v1.0.0/Wildcat.Studio_1.0.0_x64_en-US.msi) |
+| **Linux** | Modern 64-bit Linux (All distros) | Standalone `.AppImage` (78 MB) | [📥 Download Linux AppImage](https://github.com/cook0001/wildcat-studio/releases/download/v1.0.0/Wildcat.Studio_1.0.0_amd64.AppImage) |
+| **Linux** | Ubuntu / Debian (64-bit) | `.deb` Package (4.2 MB) | [📥 Download Debian/Ubuntu (.deb)](https://github.com/cook0001/wildcat-studio/releases/download/v1.0.0/Wildcat.Studio_1.0.0_amd64.deb) |
+| **Linux** | Fedora / RHEL (64-bit) | `.rpm` Package (4.2 MB) | [📥 Download RedHat/Fedora (.rpm)](https://github.com/cook0001/wildcat-studio/releases/download/v1.0.0/Wildcat.Studio-1.0.0-1.x86_64.rpm) |
 
 ### macOS Installation Note
-1. Download `Wildcat-Studio-v1.0.0.dmg`.
+1. Download `Wildcat-Studio-v1.0.0-universal.dmg`.
 2. Double-click the `.dmg` and drag **Wildcat Studio** into your **Applications** folder.
 3. On first launch, if macOS displays an unidentified developer prompt, right-click the app in Applications and click **Open**.
 
