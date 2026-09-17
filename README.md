@@ -26,6 +26,16 @@ Pre-compiled standalone installers are available on the **[Releases](https://git
 
 ---
 
+## 🌐 ArmoryVault & Firearms Ecosystem
+
+Wildcat Studio is designed as part of the specialized shooting sports and firearms management ecosystem:
+
+- 🛒 **[ArmsTrader Store (armstrader.store)](https://armstrader.store)** — Firearms, ammunition, optics, parts, and reloading supplies marketplace.
+- 🛡️ **[ArmoryVault Platform](https://cook0001.github.io/ArmoryVault/)** — Secure at-home firearms, ammunition stockpile, and range gear inventory tracker.
+- 📱 **[ArmoryVault Companion](https://github.com/cook0001/ArmoryVault-Companion)** — Dedicated mobile companion app for field inventory audits.
+
+---
+
 ## ✨ Key Capabilities
 
 ### 1. Encyclopedic Cartridge Database (⌘O / Ctrl+O)
