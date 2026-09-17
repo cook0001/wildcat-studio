@@ -29,6 +29,32 @@ Pre-compiled standalone installers are available on the **[Releases](https://git
 
 ---
 
+## 🔐 Cryptographic Verification & Checksums
+
+To verify binary package authenticity and guard against corrupted or tampered downloads, verify your downloaded file's SHA-256 digest against [`SHA256SUMS.txt`](https://github.com/cook0001/wildcat-studio/releases/download/v1.0.0/SHA256SUMS.txt):
+
+| Release Asset | SHA-256 Digest |
+| :--- | :--- |
+| `Wildcat-Studio-v1.0.0-universal.dmg` | `f614dcb79e9ff58aa4288443c642f36b643aca8e387d95f7f0418177fac62432` |
+| `Wildcat.Studio_1.0.0_x64-setup.exe` | `73899bcf9b6bc481e060f5da4fe8f2ea3bba6cb0cdcb20aa53242711b0ae05e9` |
+| `Wildcat.Studio_1.0.0_x64_en-US.msi` | `cb71586868a28ff381bb9755a971c65a31e3596a33599ab91be0353f17c9d72f` |
+| `Wildcat.Studio_1.0.0_amd64.AppImage` | `c0ad4713d8c6f17477f869d7699e254ab7d400f5e2f1f23af3e307a1ce045908` |
+| `Wildcat.Studio_1.0.0_amd64.deb` | `de40c7be793061927fa29b4f4a71411bebb4d2a547961c55ac05a75ec316d9ca` |
+| `Wildcat.Studio-1.0.0-1.x86_64.rpm` | `4548d97236d1ef6612f295ad2dde6b307952886d99a3b6837b56ce0dc1280b20` |
+
+### How to Verify:
+```bash
+# macOS / Linux
+shasum -a 256 <downloaded-file>
+
+# Windows (PowerShell)
+Get-FileHash -Algorithm SHA256 .\<downloaded-file>
+```
+
+For security policies, responsible disclosure guidelines, and vulnerability reporting, see [SECURITY.md](SECURITY.md).
+
+---
+
 ## 🌐 ArmoryVault & Firearms Ecosystem
 
 Wildcat Studio is designed as part of the specialized shooting sports and firearms management ecosystem:
