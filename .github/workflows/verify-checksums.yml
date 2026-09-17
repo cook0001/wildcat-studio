@@ -1,0 +1,36 @@
+name: Verify Release Checksums
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  verify:
+    name: Verify SHA256SUMS Integrity
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate Checksums File Format
+        run: |
+          if [ ! -f SHA256SUMS.txt ]; then
+            echo "Error: SHA256SUMS.txt not found"
+            exit 1
+          fi
+          echo "Verifying SHA256SUMS.txt format..."
+          while IFS= read -r line || [ -n "$line" ]; do
+            # Skip comments or empty lines
+            [[ "$line" =~ ^[[:space:]]*# ]] && continue
+            [[ -z "${line// }" ]] && continue
+            
+            # Check for 64-char hex sha256 followed by two spaces and filename
+            if ! [[ "$line" =~ ^[a-fA-F0-9]{64}[[:space:]]{2}[^[:space:]]+$ ]]; then
+              echo "Invalid checksum entry format: $line"
+              exit 1
+            fi
+            echo "Valid entry: $line"
+          done < SHA256SUMS.txt
+          echo "All checksum entries are syntactically valid."
