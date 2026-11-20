@@ -3,10 +3,11 @@
 ![Version](https://img.shields.io/badge/version-1.1.1-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Tauri](https://img.shields.io/badge/tauri-v2-24C8DB.svg)
+[![Website](https://img.shields.io/badge/website-wildcat.armstrader.store-06b6d4.svg)](https://wildcat.armstrader.store/)
 
 Desktop cartridge CAD, chamber reamer specification, and internal ballistics volumetrics suite built with **Tauri 2**, **Rust**, **React 19**, **TypeScript**, and **Three.js**.
 
-This repository ([`cook0001/wildcat-studio`](https://github.com/cook0001/wildcat-studio)) is the single public home for both source code and signed release builds.
+This repository ([`cook0001/wildcat-studio`](https://github.com/cook0001/wildcat-studio)) is the single public home for source code, signed release builds, and the project website ([wildcat.armstrader.store](https://wildcat.armstrader.store/)).
 
 ---
 

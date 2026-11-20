@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Engineering Manual &amp; User Guide | Wildcat Studio</title>
+  <meta name="description" content="Complete 11-chapter engineering manual for Wildcat Studio covering vector cartridge drafting, 1,000-slice Simpson volumetrics, chamber reamer specifications, barrel setback solving, and CAD exports.">
+  <link rel="canonical" href="https://wildcat.armstrader.store/guide.html">
+  <link rel="icon" type="image/png" href="assets/icon.png">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Engineering Manual &amp; User Guide | Wildcat Studio">
+  <meta property="og:url" content="https://wildcat.armstrader.store/guide.html">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <nav class="nav-inner" aria-label="Main navigation">
+      <a href="./" class="brand">
+        <img src="assets/icon.png" alt="Wildcat Studio icon" width="32" height="32">
+        <span>Wildcat Studio <span class="brand-sub">wildcat.armstrader.store</span></span>
+      </a>
+      <button type="button" class="nav-toggle" id="navToggle" aria-expanded="false" aria-label="Toggle navigation menu">Menu</button>
+      <div class="nav-links" id="navLinks">
+        <a href="./">Overview</a>
+        <a href="guide.html" class="active">User Guide</a>
+        <a href="cartridges.html">396 Cartridges</a>
+        <a href="security.html">Security &amp; Checksums</a>
+        <a href="https://github.com/cook0001/wildcat-studio" target="_blank" rel="noopener">GitHub</a>
+        <a href="./#download" class="nav-cta">Download</a>
+      </div>
+    </nav>
+  </header>
+
+  <main class="container">
+    <section class="page-hero">
+      <h1>Wildcat Studio <span>Engineering Manual</span></h1>
+      <p>Technical reference covering interactive parametric drafting, 1,000-slice Simpson integration, bullet seating geometry, chamber reamer specifications, barrel setback analysis, and multi-format CAD exports.</p>
+    </section>
+
+    <div class="guide-layout">
+      <aside class="toc-box">
+        <h3>Manual Chapters</h3>
+        <ul class="toc-list">
+          <li><a href="#ch1">01. Interface Architecture</a></li>
+          <li><a href="#ch2">02. Cartridge Database (396)</a></li>
+          <li><a href="#ch3">03. Blueprint Drafting &amp; Popovers</a></li>
+          <li><a href="#ch4">04. Simpson Volumetric Engine</a></li>
+          <li><a href="#ch5">05. Bullet &amp; Seating Solver</a></li>
+          <li><a href="#ch6">06. Wildcatting &amp; Forming</a></li>
+          <li><a href="#ch7">07. Reamers &amp; Setback Solver</a></li>
+          <li><a href="#ch8">08. 1:1 Screen Calibration</a></li>
+          <li><a href="#ch9">09. Dual Tolerance (MMC/LMC)</a></li>
+          <li><a href="#ch10">10. File Exports &amp; Interop</a></li>
+          <li><a href="#ch11">11. Keyboard Shortcuts</a></li>
+        </ul>
+      </aside>
+
+      <div>
+        <section class="chapter" id="ch1">
+          <span class="tag-amber">Chapter 01</span>
+          <h2>Interface Architecture &amp; Workflow Overview</h2>
+          <p>Wildcat Studio separates the workspace into four coordinated zones so critical tolerances remain legible while iterating on wildcat geometry:</p>
+          <ul>
+            <li><strong>Top Action Bar:</strong> Preset browser (<kbd>Cmd/Ctrl+O</kbd>), wildcatting wizard (<kbd>Cmd/Ctrl+W</kbd>), shop print sheets (<kbd>Cmd/Ctrl+P</kbd>), display calibration, comparison overlay, and CAD exports.</li>
+            <li><strong>Central 2D Blueprint &amp; 3D Lathe Canvas:</strong> Smooth pan/zoom SVG blueprint drafting plus Three.js solid and half-cutaway 3D rendering.</li>
+            <li><strong>Parametric Drawer (<kbd>Cmd/Ctrl+B</kbd>):</strong> Structured datum inputs for rim/headspace, case body, shoulder, neck, primer pocket, freebore, leade, and parabolic web thickness.</li>
+            <li><strong>Volumetric &amp; Ballistic Telemetry HUD:</strong> Real-time overflow water capacity, bullet shank displacement, net powder volume, bore index, expansion ratio, and Miller twist stability.</li>
+          </ul>
+        </section>
+
+        <section class="chapter" id="ch2">
+          <span class="tag-amber">Chapter 02</span>
+          <h2>Encyclopedic Cartridge Database (<kbd>Cmd/Ctrl+O</kbd>)</h2>
+          <p>Wildcat Studio bundles <strong>396 deduplicated SAAMI, CIP, and historic wildcat presets</strong> organized across canonical categories (Military Service, Precision Match/PRS, AR-15 Tactical, Hunting, Magnums &amp; ELR, Dangerous Game, Straight-Wall, Handgun/PCC, Classic Wildcats &amp; Ackley Improved, and Rimfire).</p>
+          <p>Custom designs save persistently to local storage (<kbd>Cmd/Ctrl+S</kbd>) or export cleanly as portable <code>.wildcat</code> JSON files.</p>
+        </section>
+
+        <section class="chapter" id="ch3">
+          <span class="tag-amber">Chapter 03</span>
+          <h2>2D CAD Blueprint Drafting &amp; In-Place Popovers</h2>
+          <p>Every blueprint dimension callout can be edited inline by clicking the dimension label on the canvas:</p>
+          <ul>
+            <li><strong>Precision Steppers:</strong> Nudge dimensions cleanly in inches or millimeters without leaving the drawing view.</li>
+            <li><strong>Geometric Validation:</strong> Automatically preserves valid axial section continuity and radial case taper boundaries.</li>
+            <li><strong>Undo/Redo History:</strong> Revert edits with <kbd>Cmd/Ctrl+Z</kbd> or redo via <kbd>Cmd/Ctrl+Shift+Z</kbd> / <kbd>Ctrl+Y</kbd>.</li>
+          </ul>
+        </section>
+
+        <section class="chapter" id="ch4">
+          <span class="tag-amber">Chapter 04</span>
+          <h2>Volumetric Physics &amp; 1,000-Slice Simpson Integration</h2>
+          <p>Both the Rust backend and TypeScript geometry engine share aligned 1,000-slice Simpson 1/3 numerical integration to eliminate approximation drift between UI previews and saved CAD exports:</p>
+          <div class="math-box">
+            <div class="formula">V = (h / 3) * SUM [ A(x_2k) + 4*A(x_2k+1) + A(x_2k+2) ]</div>
+            <div class="explain">where h = L_cavity / 1000 and internal area A(x) subtracts brass web thickness, rimfire/centerfire primer pocket reliefs, extractor grooves (omitted cleanly on rimfire cases), and parabolic wall thickness taper.</div>
+          </div>
+          <p>Reported outputs include <strong>Gross Overflow Water Capacity</strong> (grains H2O and cm3), <strong>Seated Shank Displacement</strong>, <strong>Net Usable Powder Space</strong>, and CIP axial delta metrics.</p>
+        </section>
+
+        <section class="chapter" id="ch5">
+          <span class="tag-amber">Chapter 05</span>
+          <h2>Projectile Library &amp; Seating Depth Solver</h2>
+          <p>Choose from bundled Sierra, Hornady, Berger, and Lapua projectiles or define custom bullet dimensions (diameter, length, boat-tail length, bearing surface, meplat, weight, and G1/G7 BC).</p>
+          <p>Adjusting Cartridge Overall Length (COAL) live updates base-to-ogive engagement, seating depth past the neck-shoulder junction ("donut zone" checks), and Miller gyroscopic stability (Sg).</p>
+        </section>
+
+        <section class="chapter" id="ch6">
+          <span class="tag-amber">Chapter 06</span>
+          <h2>Wildcatting &amp; Case Forming Engine (<kbd>Cmd/Ctrl+W</kbd>)</h2>
+          <ul>
+            <li><strong>Caliber Matrix Necking:</strong> Neck parent brass up or down while estimating resulting neck wall thickness and outside neck-turning requirements.</li>
+            <li><strong>Ackley Improved 40-Degree Blowout:</strong> Sharpens shoulder geometry to 40 degrees and minimizes body taper while preserving fireforming headspace datum alignment.</li>
+            <li><strong>Action-Length Truncation:</strong> Shortens long-action brass cleanly for short-action or AR magazine constraints.</li>
+          </ul>
+        </section>
+
+        <section class="chapter" id="ch7">
+          <span class="tag-amber">Chapter 07</span>
+          <h2>Chamber Reamers &amp; Barrel Setback Solver</h2>
+          <p>Generate toolmaker-ready reamer drawings and requisition blocks for <strong>PTG</strong>, <strong>Dave Manson</strong>, <strong>JGS Precision</strong>, and <strong>Clymer</strong>, complete with freebore length, throat angle, pilot bushing sizing, and chamber clearances.</p>
+          <p>The integrated setback solver evaluates axial barrel setback distances against existing chamber contours to determine exact thread-shoulder cleanup margins.</p>
+        </section>
+
+        <section class="chapter" id="ch8">
+          <span class="tag-amber">Chapter 08</span>
+          <h2>1:1 True-Scale Physical Display Calibration</h2>
+          <p>Calibrate monitor PPI once against an ISO ID-1 credit card (3.370" x 2.125"), 1.000" dial caliper span, 50.00 mm metric rule, or US quarter (0.955") so 1:1 mode matches physical brass held against the display.</p>
+        </section>
+
+        <section class="chapter" id="ch9">
+          <span class="tag-amber">Chapter 09</span>
+          <h2>Dual Tolerance Envelope Mode (MMC vs LMC)</h2>
+          <p>Overlay Maximum Material Condition cartridge envelopes inside chamber contours with live clearance deltas (&Delta;) across base diameter, shoulder junction, neck clearance, rim thickness, and overall chamber headspace.</p>
+        </section>
+
+        <section class="chapter" id="ch10">
+          <span class="tag-amber">Chapter 10</span>
+          <h2>Technical CAD Vector, Mesh &amp; Data Exports</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Format</th>
+                  <th>Extension</th>
+                  <th>Target Workflow</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td><strong>Wildcat Studio Spec</strong></td><td><code>.wildcat</code> / <code>.wcs</code></td><td>Full lossless CAD project &amp; engineering metadata interchange</td></tr>
+                <tr><td><strong>LoadBench Recipe</strong></td><td><code>.loadbench</code> / <code>.ldb</code></td><td>Interior ballistics charge/case bridge for LoadBench Studio</td></tr>
+                <tr><td><strong>RangeStudio Ballistics</strong></td><td><code>.rsb</code></td><td>Exterior trajectory export with projectile, MOA/MRAD drop tables &amp; BC data</td></tr>
+                <tr><td><strong>QuickLOAD Volume Spec</strong></td><td><code>.vol</code> / <code>.qdf</code></td><td>Quote-safe CSV/ASCII dimensional cartridge exchange</td></tr>
+                <tr><td><strong>AutoCAD Symmetric DXF</strong></td><td><code>.dxf</code></td><td>Layered 2D cartridge, chamber, freebore, and leade vectors for CNC/CAD</td></tr>
+                <tr><td><strong>3D STL Mesh</strong></td><td><code>.stl</code></td><td>Watertight binary STL with computed face normals for 3D printing check plugs</td></tr>
+                <tr><td><strong>Engineering Shop Print</strong></td><td>PDF / Typst</td><td>Scale technical drawing sheet via native print or local Typst compiler</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="chapter" id="ch11">
+          <span class="tag-amber">Chapter 11</span>
+          <h2>Keyboard Shortcuts</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Shortcut</th><th>Action</th></tr>
+              </thead>
+              <tbody>
+                <tr><td><kbd>Cmd/Ctrl+O</kbd></td><td>Open Cartridge Database Modal</td></tr>
+                <tr><td><kbd>Cmd/Ctrl+S</kbd></td><td>Save Current Cartridge Preset</td></tr>
+                <tr><td><kbd>Cmd/Ctrl+W</kbd></td><td>Open Wildcat Wizard</td></tr>
+                <tr><td><kbd>Cmd/Ctrl+P</kbd></td><td>Open Engineering Print Sheet</td></tr>
+                <tr><td><kbd>Cmd/Ctrl+B</kbd></td><td>Toggle Parametric Sidebar</td></tr>
+                <tr><td><kbd>Cmd/Ctrl+Z</kbd> / <kbd>Cmd/Ctrl+Shift+Z</kbd></td><td>Undo / Redo Geometry Edits</td></tr>
+                <tr><td><kbd>F</kbd> / <kbd>R</kbd> / <kbd>F1</kbd></td><td>Fit View / Rotate 90 deg / Open Help Manual</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div>
+          <h5>Wildcat Studio</h5>
+          <p style="margin:0;color:var(--text-muted);font-size:0.88rem;">MIT-licensed cartridge design &amp; chamber reamer CAD suite.</p>
+        </div>
+        <div>
+          <h5>Documentation</h5>
+          <a href="./">Overview &amp; Downloads</a>
+          <a href="guide.html">Engineering Manual</a>
+          <a href="cartridges.html">396 Cartridge Presets</a>
+          <a href="security.html">Security &amp; SHA-256 Checksums</a>
+        </div>
+        <div>
+          <h5>ArmsTrader Ecosystem</h5>
+          <a href="https://armstrader.store" target="_blank" rel="noopener">ArmsTrader Utilities</a>
+          <a href="https://armstrader.store/loadbench" target="_blank" rel="noopener">LoadBench Studio</a>
+          <a href="https://armstrader.store/rangestudio" target="_blank" rel="noopener">RangeStudio</a>
+          <a href="https://armstrader.store/armoryvault" target="_blank" rel="noopener">ArmoryVault</a>
+        </div>
+      </div>
+      <div class="footer-note">MIT License &bull; Copyright (c) 2026 Daniel Cook / Wildcat Studio.</div>
+    </div>
+  </footer>
+  <script src="site.js" defer></script>
+</body>
+</html>

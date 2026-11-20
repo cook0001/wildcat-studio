@@ -26,10 +26,10 @@ jobs:
       - name: Frontend Dependency Vulnerability Audit
         run: |
           echo "Auditing npm dependencies..."
-          npm audit --audit-level=high || true
+          npm audit --audit-level=high
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cargo-audit
 
       - name: Rust Crates Security Audit
-        uses: rustsec/audit-check@v2.0.0
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          working-directory: src-tauri
+        run: cargo audit --file src-tauri/Cargo.lock

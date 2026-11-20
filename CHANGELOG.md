@@ -21,15 +21,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Normalized 126 mismatched cartridge category strings and removed 12 duplicate entries across `src/data/cartridges/` (`396` unique presets across 11 categories), plus fixed `.44 Henry Rimfire` neck dimensions.
   - Fixed `BlueprintCanvas.tsx` zoom/pan resets on edits, full snapshot restoration on dimension Cancel, reversed bottom SVG contours, `little_boy_ordnance` cutaway condition, metric datum formatting, `ThreeViewport.tsx` material disposal & pause/delta-spin loop, `ParametricControls.tsx` Section 4 collapse toggle & number typing drafts, `useHistory.ts` atomic state transitions, Typst template `context` footer & escaping, HTML print escaping, MOA/MRAD trajectory math, and missing CSS keyframes / `-webkit-backdrop-filter` prefixes.
 - **CI Workflows (`audit.yml`, `release.yml`)**:
-  - Fixed `rustsec/audit-check@v2.0.0` in `audit.yml` (`working-directory: src-tauri`).
+  - Switched `audit.yml` to `cargo audit --file src-tauri/Cargo.lock` and strict `npm audit --audit-level=high`.
   - Changed `release.yml` to manual `workflow_dispatch` only with resolved `v<version>` default tags.
 
 ### Added
-- **Built-in Tauri Self-Signing, Auto-Updater & Multi-Arch Releases**:
+- **Built-in Tauri Self-Signing, Auto-Updater, Website & Security Updates**:
   - Enabled macOS ad-hoc self-signing (`signingIdentity: "-"`) and Windows passive updater mode in `tauri.conf.json` pointing to `cook0001/wildcat-studio`.
   - Added Rust `restart_app` (`app.request_restart()`) command and wired startup `Update` state handoff into `UpdateModal.tsx`.
   - Added **Windows ARM64** (`windows-11-arm`) and **Linux ARM64** (`ubuntu-24.04-arm`) builds plus deterministic post-matrix `latest.json` generation (`scripts/generate-updater-manifest.mjs`).
   - Transitioned public repository licensing to the **MIT License**.
+  - Added standalone GitHub Pages documentation/download website under `docs/` for [`wildcat.armstrader.store`](https://wildcat.armstrader.store/) with live GitHub Releases & `SHA256SUMS.txt` integration and synced 396-preset catalog (`docs/data/cartridges.json`).
+  - Updated Rust and npm dependencies (`tauri` 2.12.7, `tauri-plugin-updater` 2.14.1, `zip` 9.8.1, `rustls` 0.23.46, `rustls-webpki` 0.103.17, `webpki-root-certs` 1.0.12, `@tauri-apps/*`, `lucide-react`) resolving security advisories.
 
 ## [1.1.0] - 2026-09-20
 

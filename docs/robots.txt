@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://wildcat.armstrader.store/sitemap.xml

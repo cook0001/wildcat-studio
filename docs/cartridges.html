@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>396 Cartridge Design Presets Directory | Wildcat Studio</title>
+  <meta name="description" content="Searchable directory of all 396 verified SAAMI, CIP, and wildcat cartridge presets bundled in Wildcat Studio, complete with bullet diameter, base diameter, shoulder angle, case length, and pressure.">
+  <link rel="canonical" href="https://wildcat.armstrader.store/cartridges.html">
+  <link rel="icon" type="image/png" href="assets/icon.png">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="396 Cartridge Design Presets Directory | Wildcat Studio">
+  <meta property="og:url" content="https://wildcat.armstrader.store/cartridges.html">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <nav class="nav-inner" aria-label="Main navigation">
+      <a href="./" class="brand">
+        <img src="assets/icon.png" alt="Wildcat Studio icon" width="32" height="32">
+        <span>Wildcat Studio <span class="brand-sub">wildcat.armstrader.store</span></span>
+      </a>
+      <button type="button" class="nav-toggle" id="navToggle" aria-expanded="false" aria-label="Toggle navigation menu">Menu</button>
+      <div class="nav-links" id="navLinks">
+        <a href="./">Overview</a>
+        <a href="guide.html">User Guide</a>
+        <a href="cartridges.html" class="active">396 Cartridges</a>
+        <a href="security.html">Security &amp; Checksums</a>
+        <a href="https://github.com/cook0001/wildcat-studio" target="_blank" rel="noopener">GitHub</a>
+        <a href="./#download" class="nav-cta">Download</a>
+      </div>
+    </nav>
+  </header>
+
+  <main class="container">
+    <section class="page-hero">
+      <h1><span>396 Cartridge</span> Presets Directory</h1>
+      <p>Search verified SAAMI, CIP, and wildcat cartridge presets synced directly from the Wildcat Studio desktop database.</p>
+    </section>
+
+    <section class="controls-bar">
+      <input type="search" id="cartSearch" class="search-input" placeholder="Search by cartridge name, caliber, standard (e.g. 6.5 Creedmoor, .308, SAAMI, Ackley)..." autocomplete="off">
+      <div class="filter-row" id="stdFilters" aria-label="Filter by standard"></div>
+      <div class="filter-row" id="catFilters" aria-label="Filter by category"></div>
+    </section>
+
+    <div class="results-meta">
+      <div>Showing <strong id="visibleCount">396</strong> of <strong id="totalCount">396</strong> presets</div>
+      <div>Dimensions in inches (US) &bull; Max pressure in bar</div>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Cartridge Name</th>
+            <th>Standard</th>
+            <th>Bullet (G1)</th>
+            <th>Base (P1)</th>
+            <th>Rim (R1)</th>
+            <th>Rim Style</th>
+            <th>Shoulder</th>
+            <th>Case (L3)</th>
+            <th>Max Pressure</th>
+          </tr>
+        </thead>
+        <tbody id="cartBody">
+          <tr><td colspan="9">Loading presets...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div>
+          <h5>Wildcat Studio</h5>
+          <p style="margin:0;color:var(--text-muted);font-size:0.88rem;">MIT-licensed cartridge design &amp; chamber reamer CAD suite.</p>
+        </div>
+        <div>
+          <h5>Documentation</h5>
+          <a href="./">Overview &amp; Downloads</a>
+          <a href="guide.html">Engineering Manual</a>
+          <a href="cartridges.html">396 Cartridge Presets</a>
+          <a href="security.html">Security &amp; SHA-256 Checksums</a>
+        </div>
+        <div>
+          <h5>ArmsTrader Ecosystem</h5>
+          <a href="https://armstrader.store" target="_blank" rel="noopener">ArmsTrader Utilities</a>
+          <a href="https://armstrader.store/loadbench" target="_blank" rel="noopener">LoadBench Studio</a>
+          <a href="https://armstrader.store/rangestudio" target="_blank" rel="noopener">RangeStudio</a>
+          <a href="https://armstrader.store/armoryvault" target="_blank" rel="noopener">ArmoryVault</a>
+        </div>
+      </div>
+      <div class="footer-note">MIT License &bull; Copyright (c) 2026 Daniel Cook / Wildcat Studio.</div>
+    </div>
+  </footer>
+  <script src="site.js" defer></script>
+</body>
+</html>
