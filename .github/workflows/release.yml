@@ -137,17 +137,6 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      - name: Extract Release Notes from CHANGELOG
-        id: changelog_reader
-        shell: bash
-        run: |
-          if [ -f CHANGELOG.md ]; then
-            awk '/^## /{if (p) exit; p=1; next} p' CHANGELOG.md > release_notes.txt || true
-          fi
-          if [ -z "$(tr -d '[:space:]' < release_notes.txt 2>/dev/null)" ]; then
-            echo "Standalone multi-platform installers for macOS (Universal), Windows (x64 & ARM64), and Linux (x64 & ARM64)." > release_notes.txt
-          fi
-
       - name: Build Tauri Application
         uses: tauri-apps/tauri-action@v1
         env:
@@ -187,12 +176,21 @@ jobs:
           mkdir -p release-assets
           gh release download "$TAG_NAME" --dir release-assets
           rm -f release-assets/latest.json release-assets/SHA256SUMS.txt
-          awk '/^## /{if (p) exit; p=1; next} p' CHANGELOG.md > release_notes.txt || true
-          node scripts/generate-updater-manifest.mjs release-assets "${{ github.repository }}" "$TAG_NAME" release_notes.txt release-assets/latest.json
-          cd release-assets
-          if compgen -G "*.*" > /dev/null; then
-            sha256sum * > SHA256SUMS.txt
+          VER="${TAG_NAME#v}"
+          awk -v ver="$VER" '$0 ~ "^## \\[?" ver "(\\]|$| )"{p=1; next} /^## /{if(p) exit} p' CHANGELOG.md > release_notes.txt || true
+          if [ -z "$(tr -d '[:space:]' < release_notes.txt 2>/dev/null)" ]; then
+            echo "Standalone multi-platform installers for macOS (Universal), Windows (x64 & ARM64), and Linux (x64 & ARM64)." > release_notes.txt
+          fi
+          node scripts/generate-updater-manifest.mjs release-assets "${{ github.repository }}" "$TAG_NAME" release_notes.txt latest.json
+          (
+            cd release-assets
+            if compgen -G "*.*" > /dev/null; then
+              sha256sum * > ../SHA256SUMS.txt
+            fi
+          )
+          if [ -s SHA256SUMS.txt ]; then
             gh release upload "$TAG_NAME" latest.json SHA256SUMS.txt --clobber
+            gh release edit "$TAG_NAME" --notes-file release_notes.txt
             echo "latest.json and SHA256SUMS.txt generated and attached to release."
           fi
 
