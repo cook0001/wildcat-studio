@@ -1,5 +1,4 @@
-// Complete Encyclopedic Cartridge Database for Wildcat Studio
-// 268 SAAMI, CIP, and precision wildcat cartridges across 11 categories.
+// Cartridge database types and taxonomy across 11 categories.
 
 export type RimType = "rimless" | "rimmed" | "semi_rimmed" | "belted" | "rebated" | "rimfire";
 export type DimensionStandard = "SAAMI" | "CIP" | "Wildcat";

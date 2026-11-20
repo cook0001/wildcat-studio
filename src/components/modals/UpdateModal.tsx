@@ -11,10 +11,17 @@ import {
   ShieldCheck
 } from 'lucide-react';
 import { check, Update, DownloadEvent } from '@tauri-apps/plugin-updater';
+import { invoke } from '@tauri-apps/api/core';
+import {
+  getAppVersionLabel,
+  isAutoUpdateEnabled,
+  setAutoUpdateEnabled,
+} from '../../utils/cartridgeHelpers';
 
 interface UpdateModalProps {
   isOpen: boolean;
   onClose: () => void;
+  availableUpdate?: Update | null;
   onUpdateAvailableChange?: (available: boolean, version?: string) => void;
 }
 
@@ -23,10 +30,13 @@ type UpdateStatus = 'idle' | 'checking' | 'available' | 'up-to-date' | 'download
 export const UpdateModal: React.FC<UpdateModalProps> = ({
   isOpen,
   onClose,
+  availableUpdate = null,
   onUpdateAvailableChange
 }) => {
   const [status, setStatus] = useState<UpdateStatus>('idle');
-  const [currentVersion, setCurrentVersion] = useState<string>('1.0.0');
+  const [currentVersion, setCurrentVersion] = useState<string>(
+    typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.1.0'
+  );
   const [newVersion, setNewVersion] = useState<string>('');
   const [releaseNotes, setReleaseNotes] = useState<string>('');
   const [releaseDate, setReleaseDate] = useState<string>('');
@@ -36,15 +46,16 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [activeUpdate, setActiveUpdate] = useState<Update | null>(null);
   
-  const [autoCheck, setAutoCheck] = useState<boolean>(() => {
-    const saved = localStorage.getItem('wildcat_auto_check_updates');
-    return saved !== null ? saved === 'true' : true;
-  });
+  const [autoCheck, setAutoCheck] = useState<boolean>(() => isAutoUpdateEnabled());
+
+  useEffect(() => {
+    getAppVersionLabel().then((ver) => setCurrentVersion(ver)).catch(() => {});
+  }, []);
 
   const handleToggleAutoCheck = (e: React.ChangeEvent<HTMLInputElement>) => {
     const checked = e.target.checked;
     setAutoCheck(checked);
-    localStorage.setItem('wildcat_auto_check_updates', String(checked));
+    setAutoUpdateEnabled(checked);
   };
 
   const checkForUpdates = useCallback(async (isManual: boolean = true) => {
@@ -53,27 +64,35 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
     setErrorMessage('');
 
     try {
+      const appVer = await getAppVersionLabel();
       const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
       
       if (!isTauri) {
         setTimeout(() => {
           setStatus('up-to-date');
-          setCurrentVersion('1.0.0 (Web Preview)');
-        }, 600);
+          setCurrentVersion(`${appVer} (Web Preview)`);
+        }, 400);
         return;
       }
 
+      setCurrentVersion(appVer);
       const update = await check();
 
       if (update && update.available) {
+        if (activeUpdate && activeUpdate.rid !== update.rid) {
+          activeUpdate.close().catch(() => {});
+        }
         setActiveUpdate(update);
-        setCurrentVersion(update.currentVersion);
+        setCurrentVersion(update.currentVersion || appVer);
         setNewVersion(update.version);
         setReleaseNotes(update.body || 'No release notes provided.');
         setReleaseDate(update.date || '');
         setStatus('available');
         onUpdateAvailableChange?.(true, update.version);
       } else {
+        if (activeUpdate) {
+          activeUpdate.close().catch(() => {});
+        }
         setActiveUpdate(null);
         setStatus('up-to-date');
         onUpdateAvailableChange?.(false);
@@ -87,13 +106,23 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
         onUpdateAvailableChange?.(false);
       }
     }
-  }, [status, onUpdateAvailableChange]);
+  }, [status, activeUpdate, onUpdateAvailableChange]);
 
   useEffect(() => {
-    if (isOpen && status === 'idle') {
-      checkForUpdates(true);
+    if (!isOpen) return;
+    if (status === 'idle') {
+      if (availableUpdate && availableUpdate.available) {
+        setActiveUpdate(availableUpdate);
+        if (availableUpdate.currentVersion) setCurrentVersion(availableUpdate.currentVersion);
+        setNewVersion(availableUpdate.version);
+        setReleaseNotes(availableUpdate.body || 'No release notes provided.');
+        setReleaseDate(availableUpdate.date || '');
+        setStatus('available');
+      } else {
+        checkForUpdates(true);
+      }
     }
-  }, [isOpen, status, checkForUpdates]);
+  }, [isOpen, status, availableUpdate, checkForUpdates]);
 
   const handleDownloadAndInstall = async () => {
     if (!activeUpdate) return;
@@ -132,6 +161,16 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
   };
 
   const handleRelaunch = async () => {
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      try {
+        await invoke('restart_app');
+        return;
+      } catch (err) {
+        setErrorMessage(err instanceof Error ? err.message : 'Please close and reopen Wildcat Studio to complete the update.');
+        setStatus('error');
+        return;
+      }
+    }
     window.location.reload();
   };
 

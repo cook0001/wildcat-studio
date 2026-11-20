@@ -1655,7 +1655,7 @@ export const MAGNUMS_ELR_CARTRIDGES: Record<string, CartridgeSpec> = {
   "65_rpm": {
       "id": "65_rpm",
       "name": "6.5 Weatherby RPM (Rebated Precision Mag)",
-      "category": "Magnums & Extreme Long Range",
+      "category": "Magnums & Extreme Long Range (ELR)",
       "standard": "SAAMI",
       "units": "imperial",
       "rim_type": "rebated",
@@ -1688,7 +1688,7 @@ export const MAGNUMS_ELR_CARTRIDGES: Record<string, CartridgeSpec> = {
   "338_rpm": {
       "id": "338_rpm",
       "name": ".338 Weatherby RPM (Rebated Precision Mag)",
-      "category": "Magnums & Extreme Long Range",
+      "category": "Magnums & Extreme Long Range (ELR)",
       "standard": "SAAMI",
       "units": "imperial",
       "rim_type": "rebated",
@@ -1721,7 +1721,7 @@ export const MAGNUMS_ELR_CARTRIDGES: Record<string, CartridgeSpec> = {
   "65_rem_mag": {
       "id": "65_rem_mag",
       "name": "6.5 Remington Magnum",
-      "category": "Magnums & Extreme Long Range",
+      "category": "Magnums & Extreme Long Range (ELR)",
       "standard": "SAAMI",
       "units": "imperial",
       "rim_type": "belted",
@@ -1756,7 +1756,7 @@ export const MAGNUMS_ELR_CARTRIDGES: Record<string, CartridgeSpec> = {
   "350_rem_mag": {
       "id": "350_rem_mag",
       "name": ".350 Remington Magnum",
-      "category": "Magnums & Extreme Long Range",
+      "category": "Magnums & Extreme Long Range (ELR)",
       "standard": "SAAMI",
       "units": "imperial",
       "rim_type": "belted",
@@ -1791,7 +1791,7 @@ export const MAGNUMS_ELR_CARTRIDGES: Record<string, CartridgeSpec> = {
   "300_jarrett": {
       "id": "300_jarrett",
       "name": ".300 Jarrett (Kenny Jarrett Precision)",
-      "category": "Magnums & Extreme Long Range",
+      "category": "Magnums & Extreme Long Range (ELR)",
       "standard": "Wildcat",
       "units": "imperial",
       "rim_type": "belted",
@@ -1826,7 +1826,7 @@ export const MAGNUMS_ELR_CARTRIDGES: Record<string, CartridgeSpec> = {
   "20x138b_solothurn": {
       "id": "20x138b_solothurn",
       "name": "20x138mmB Solothurn (FlaK 30/38)",
-      "category": "Magnums & Extreme Long Range",
+      "category": "Magnums & Extreme Long Range (ELR)",
       "standard": "Wildcat",
       "units": "metric",
       "rim_type": "belted",
@@ -1861,7 +1861,7 @@ export const MAGNUMS_ELR_CARTRIDGES: Record<string, CartridgeSpec> = {
   "460_steyr": {
       "id": "460_steyr",
       "name": ".460 Steyr (11.6x90mm ELR)",
-      "category": "Magnums & Extreme Long Range",
+      "category": "Magnums & Extreme Long Range (ELR)",
       "standard": "CIP",
       "units": "metric",
       "rim_type": "rimless",
@@ -1894,7 +1894,7 @@ export const MAGNUMS_ELR_CARTRIDGES: Record<string, CartridgeSpec> = {
   "50_fat_mac": {
       "id": "50_fat_mac",
       "name": ".50 Fat Mac (McMillan 20mm Cannon Necked)",
-      "category": "Magnums & Extreme Long Range",
+      "category": "Magnums & Extreme Long Range (ELR)",
       "standard": "Wildcat",
       "units": "imperial",
       "rim_type": "rimless",
@@ -1927,7 +1927,7 @@ export const MAGNUMS_ELR_CARTRIDGES: Record<string, CartridgeSpec> = {
   "50_peacekeeper": {
       "id": "50_peacekeeper",
       "name": ".50 Peacekeeper (SSK Industries)",
-      "category": "Magnums & Extreme Long Range",
+      "category": "Magnums & Extreme Long Range (ELR)",
       "standard": "Wildcat",
       "units": "imperial",
       "rim_type": "belted",
@@ -1962,7 +1962,7 @@ export const MAGNUMS_ELR_CARTRIDGES: Record<string, CartridgeSpec> = {
   "375_swiss_p": {
       "id": "375_swiss_p",
       "name": ".375 Swiss P (9.5x70mm RUAG Target)",
-      "category": "Magnums & Extreme Long Range",
+      "category": "Magnums & Extreme Long Range (ELR)",
       "standard": "CIP",
       "units": "metric",
       "rim_type": "rebated",

@@ -8,6 +8,7 @@ pub enum RimType {
     SemiRimmed,
     Belted,
     Rebated,
+    Rimfire,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

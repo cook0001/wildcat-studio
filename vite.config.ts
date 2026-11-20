@@ -1,19 +1,20 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-// @ts-expect-error type error without @types/node package
+// @ts-expect-error node built-ins used at build time without @types/node
 import process from "node:process";
-const host = process.env.TAURI_DEV_HOST;
+// @ts-expect-error node built-ins used at build time without @types/node
+import { readFileSync } from "node:fs";
 
-// https://vite.dev/config/
+const host = process.env.TAURI_DEV_HOST;
+const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8"));
+
 export default defineConfig(() => ({
   plugins: [react()],
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version || "1.1.0"),
+  },
 
-  // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
-  //
-  // 1. prevent Vite from obscuring rust errors
   clearScreen: false,
-
-  // 2. tauri expects a fixed port, fail if that port is not available
   server: {
     port: 1420,
     strictPort: true,
@@ -26,27 +27,25 @@ export default defineConfig(() => ({
         }
       : undefined,
     watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
       ignored: ["**/src-tauri/**"],
     },
   },
 
-  // Production Build Protection: aggressive mangling, stripped sourcemaps & dropped console logs
   build: {
-    sourcemap: false, // Never expose source code maps
+    sourcemap: false,
     minify: "terser",
     terserOptions: {
       compress: {
-        drop_console: true, // Drop all console.log/info/debug
-        drop_debugger: true, // Drop all debugger statements
-        passes: 2, // Multi-pass dead code elimination and variable compression
+        drop_console: true,
+        drop_debugger: true,
+        passes: 2,
         pure_funcs: ["console.log", "console.info", "console.debug", "console.warn"],
       },
       mangle: {
-        toplevel: true, // Obfuscate and mangle top-level variable and function names
+        toplevel: true,
       },
       format: {
-        comments: false, // Strip all comments, license blocks, and file headers
+        comments: false,
       },
     },
     chunkSizeWarningLimit: 2000,

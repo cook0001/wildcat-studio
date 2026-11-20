@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { CartridgeSpec, CARTRIDGE_PRESETS } from '../types/cartridge';
 import { 
   STANDARD_CALIBERS, 
@@ -53,6 +53,13 @@ export const WildcatWizardModal: React.FC<WildcatWizardModalProps> = ({
   const [selectedParentId, setSelectedParentId] = useState<string>(activeCartridge.id);
   const [wizardMode, setWizardMode] = useState<WizardMode>('neck');
   const [isPickerOpen, setIsPickerOpen] = useState<boolean>(false);
+
+  // Sync parent baseline whenever the user opens the Wizard or switches the active cartridge
+  useEffect(() => {
+    setSelectedParentId(activeCartridge.id);
+    const nextCal = STANDARD_CALIBERS.find(c => Math.abs(c.inches - activeCartridge.bullet_diameter) > 0.015);
+    if (nextCal) setSelectedCaliber(nextCal);
+  }, [activeCartridge.id, activeCartridge.bullet_diameter]);
   
   // Mode 1: Necking
   const [selectedCaliber, setSelectedCaliber] = useState<CaliberOption>(() => {

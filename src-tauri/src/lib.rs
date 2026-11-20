@@ -38,8 +38,50 @@ fn export_dxf(spec: CartridgeSpec) -> String {
     generate_dxf_string(&spec)
 }
 
-use std::process::Command;
 use std::io::Write;
+use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static TEMP_FILE_SEQ: AtomicU64 = AtomicU64::new(0);
+
+fn next_temp_file_path(prefix: &str, ext: &str) -> std::path::PathBuf {
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let seq = TEMP_FILE_SEQ.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id();
+    std::env::temp_dir().join(format!("{}_{}_{}_{}.{}", prefix, timestamp, pid, seq, ext))
+}
+
+fn open_with_system_viewer(file_path: &std::path::Path, context_label: &str) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(file_path)
+            .spawn()
+            .map_err(|e| format!("Failed to launch {}: {}", context_label, e))?;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let path_str = file_path.to_string_lossy().to_string();
+        Command::new("cmd")
+            .args(["/C", "start", "", &path_str])
+            .spawn()
+            .map_err(|e| format!("Failed to launch {}: {}", context_label, e))?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        Command::new("xdg-open")
+            .arg(file_path)
+            .spawn()
+            .map_err(|e| format!("Failed to launch {}: {}", context_label, e))?;
+    }
+
+    Ok(())
+}
 
 #[tauri::command]
 fn check_typst_available() -> bool {
@@ -84,13 +126,7 @@ fn compile_typst_pdf(typst_source: String) -> Result<Vec<u8>, String> {
 
 #[tauri::command]
 fn trigger_system_print(html_content: String, _title: String) -> Result<String, String> {
-    let temp_dir = std::env::temp_dir();
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    let file_name = format!("wildcat_print_{}.html", timestamp);
-    let file_path = temp_dir.join(&file_name);
+    let file_path = next_temp_file_path("wildcat_print", "html");
 
     // Ensure auto-print script is present so the native system print sheet appears immediately
     let final_html = if !html_content.contains("window.print()") {
@@ -105,76 +141,24 @@ fn trigger_system_print(html_content: String, _title: String) -> Result<String, 
     std::fs::write(&file_path, final_html)
         .map_err(|e| format!("Failed to write temporary print file: {}", e))?;
 
-    let path_str = file_path.to_string_lossy().to_string();
-
-    #[cfg(target_os = "macos")]
-    {
-        Command::new("open")
-            .arg(&file_path)
-            .spawn()
-            .map_err(|e| format!("Failed to launch system print viewer: {}", e))?;
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        Command::new("cmd")
-            .args(["/C", "start", "", &path_str])
-            .spawn()
-            .map_err(|e| format!("Failed to launch system print viewer: {}", e))?;
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        Command::new("xdg-open")
-            .arg(&file_path)
-            .spawn()
-            .map_err(|e| format!("Failed to launch system print viewer: {}", e))?;
-    }
-
-    Ok(path_str)
+    open_with_system_viewer(&file_path, "system print viewer")?;
+    Ok(file_path.to_string_lossy().to_string())
 }
 
 #[tauri::command]
 fn trigger_system_pdf_print(pdf_data: Vec<u8>, title: String) -> Result<String, String> {
-    let temp_dir = std::env::temp_dir();
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    let clean_title = title.replace(|c: char| !c.is_alphanumeric() && c != '_' && c != '-', "_");
-    let file_name = format!("wildcat_{}_{}.pdf", clean_title, timestamp);
-    let file_path = temp_dir.join(&file_name);
+    let clean_title: String = title
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .collect();
+    let prefix = format!("wildcat_{}", clean_title);
+    let file_path = next_temp_file_path(&prefix, "pdf");
 
     std::fs::write(&file_path, pdf_data)
         .map_err(|e| format!("Failed to write temporary PDF: {}", e))?;
 
-    let path_str = file_path.to_string_lossy().to_string();
-
-    #[cfg(target_os = "macos")]
-    {
-        Command::new("open")
-            .arg(&file_path)
-            .spawn()
-            .map_err(|e| format!("Failed to launch Preview for PDF print: {}", e))?;
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        Command::new("cmd")
-            .args(["/C", "start", "", &path_str])
-            .spawn()
-            .map_err(|e| format!("Failed to launch PDF viewer: {}", e))?;
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        Command::new("xdg-open")
-            .arg(&file_path)
-            .spawn()
-            .map_err(|e| format!("Failed to launch PDF viewer: {}", e))?;
-    }
-
-    Ok(path_str)
+    open_with_system_viewer(&file_path, "PDF viewer")?;
+    Ok(file_path.to_string_lossy().to_string())
 }
 
 #[allow(unused_imports)]
@@ -201,6 +185,11 @@ fn read_cartridge_file(path: String) -> Result<OpenedFilePayload, String> {
     let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("Cartridge File").to_string();
     let content = std::fs::read_to_string(p).map_err(|e| format!("Failed to read file: {}", e))?;
     Ok(OpenedFilePayload { name, path, content })
+}
+
+#[tauri::command]
+fn restart_app(app: tauri::AppHandle) {
+    app.request_restart();
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -239,7 +228,8 @@ pub fn run() {
             trigger_system_print,
             trigger_system_pdf_print,
             get_pending_open_file,
-            read_cartridge_file
+            read_cartridge_file,
+            restart_app
         ])
         .build(tauri::generate_context!())
         .expect("error while building Wildcat Studio");

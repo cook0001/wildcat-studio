@@ -2,6 +2,7 @@ import React, { useRef } from 'react';
 import { CartridgeSpec } from '../../types/cartridge';
 import { generateReamerSpecFrontend, calculateHeadspaceGauges } from '../../utils/volumetrics';
 import { openStandalonePrintWindow } from '../../utils/fileExport';
+import { escapeHtml } from '../../utils/cartridgeHelpers';
 import { Printer, Disc, Shield, Sliders } from 'lucide-react';
 
 interface ReamerCADShopPrintProps {
@@ -40,7 +41,7 @@ export const ReamerCADShopPrint: React.FC<ReamerCADShopPrintProps> = ({
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>${cartridge.name} - Chamber Reamer & Toolroom CAD Blueprint</title>
+    <title>${escapeHtml(cartridge.name)} - Chamber Reamer &amp; Toolroom CAD Blueprint</title>
     <style>
       @page { size: letter landscape; margin: 0.35in; }
       * { box-sizing: border-box; }
@@ -141,7 +142,7 @@ export const ReamerCADShopPrint: React.FC<ReamerCADShopPrintProps> = ({
           <span class="sub">HIGH-PRECISION CHAMBER FINISH REAMER CAD BLUEPRINT</span>
         </div>
         <div class="meta">
-          STANDARD: ${cartridge.standard.toUpperCase()} &bull; UNITS: ${isMetric ? 'METRIC (MM)' : 'IMPERIAL (INCH)'}
+          STANDARD: ${escapeHtml(cartridge.standard.toUpperCase())} &bull; UNITS: ${isMetric ? 'METRIC (MM)' : 'IMPERIAL (INCH)'}
         </div>
       </div>
 
@@ -273,7 +274,7 @@ export const ReamerCADShopPrint: React.FC<ReamerCADShopPrintProps> = ({
           <div class="title-block-body">
             <div>
               <div style="font-size: 9px; color: #64748b; font-weight: 700; text-transform: uppercase;">CARTRIDGE DESIGNATION</div>
-              <div style="font-size: 15px; font-weight: 900; color: #0f172a; margin-top: 2px;">${cartridge.name}</div>
+              <div style="font-size: 15px; font-weight: 900; color: #0f172a; margin-top: 2px;">${escapeHtml(cartridge.name)}</div>
               <div style="font-size: 10px; color: #475569; margin-top: 3px;">
                 NECK FIT: ${neckFit.toUpperCase()} &bull; PILOT: ${pilotType.toUpperCase()}
               </div>

@@ -1126,7 +1126,7 @@ export const HUNTING_CARTRIDGES: Record<string, CartridgeSpec> = {
   "221_fireball": {
       "id": "221_fireball",
       "name": ".221 Remington Fireball",
-      "category": "American & European Hunting",
+      "category": "Standard American & European Hunting",
       "standard": "SAAMI",
       "units": "imperial",
       "rim_type": "rimless",
@@ -1159,7 +1159,7 @@ export const HUNTING_CARTRIDGES: Record<string, CartridgeSpec> = {
   "256_newton": {
       "id": "256_newton",
       "name": ".256 Newton (6.5x62mm)",
-      "category": "American & European Hunting",
+      "category": "Standard American & European Hunting",
       "standard": "SAAMI",
       "units": "imperial",
       "rim_type": "rimless",
@@ -1192,7 +1192,7 @@ export const HUNTING_CARTRIDGES: Record<string, CartridgeSpec> = {
   "270_weatherby_mag": {
       "id": "270_weatherby_mag",
       "name": ".270 Weatherby Magnum",
-      "category": "American & European Hunting",
+      "category": "Standard American & European Hunting",
       "standard": "SAAMI",
       "units": "imperial",
       "rim_type": "belted",
@@ -1227,7 +1227,7 @@ export const HUNTING_CARTRIDGES: Record<string, CartridgeSpec> = {
   "348_win": {
       "id": "348_win",
       "name": ".348 Winchester (Model 71)",
-      "category": "American & European Hunting",
+      "category": "Standard American & European Hunting",
       "standard": "SAAMI",
       "units": "imperial",
       "rim_type": "rimmed",
@@ -1260,7 +1260,7 @@ export const HUNTING_CARTRIDGES: Record<string, CartridgeSpec> = {
   "65x57r_mauser": {
       "id": "65x57r_mauser",
       "name": "6.5x57mmR Mauser (European Rimmed)",
-      "category": "American & European Hunting",
+      "category": "Standard American & European Hunting",
       "standard": "CIP",
       "units": "metric",
       "rim_type": "rimmed",
@@ -1293,7 +1293,7 @@ export const HUNTING_CARTRIDGES: Record<string, CartridgeSpec> = {
   "93x57_mauser": {
       "id": "93x57_mauser",
       "name": "9.3x57mm Mauser (Husqvarna Elk)",
-      "category": "American & European Hunting",
+      "category": "Standard American & European Hunting",
       "standard": "CIP",
       "units": "metric",
       "rim_type": "rimless",
@@ -1326,7 +1326,7 @@ export const HUNTING_CARTRIDGES: Record<string, CartridgeSpec> = {
   "25_remington": {
       "id": "25_remington",
       "name": ".25 Remington (.25 Rem Auto)",
-      "category": "American & European Hunting",
+      "category": "Standard American & European Hunting",
       "standard": "SAAMI",
       "units": "imperial",
       "rim_type": "rimless",
@@ -1359,7 +1359,7 @@ export const HUNTING_CARTRIDGES: Record<string, CartridgeSpec> = {
   "30_remington": {
       "id": "30_remington",
       "name": ".30 Remington (Rimless .30-30)",
-      "category": "American & European Hunting",
+      "category": "Standard American & European Hunting",
       "standard": "SAAMI",
       "units": "imperial",
       "rim_type": "rimless",
@@ -1392,7 +1392,7 @@ export const HUNTING_CARTRIDGES: Record<string, CartridgeSpec> = {
   "32_remington": {
       "id": "32_remington",
       "name": ".32 Remington (.32 Rem Auto)",
-      "category": "American & European Hunting",
+      "category": "Standard American & European Hunting",
       "standard": "SAAMI",
       "units": "imperial",
       "rim_type": "rimless",
@@ -1425,7 +1425,7 @@ export const HUNTING_CARTRIDGES: Record<string, CartridgeSpec> = {
   "351_win_sl": {
       "id": "351_win_sl",
       "name": ".351 Winchester Self-Loading (1907 SL)",
-      "category": "American & European Hunting",
+      "category": "Standard American & European Hunting",
       "standard": "SAAMI",
       "units": "imperial",
       "rim_type": "semi_rimmed",
@@ -1458,7 +1458,7 @@ export const HUNTING_CARTRIDGES: Record<string, CartridgeSpec> = {
   "401_win_sl": {
       "id": "401_win_sl",
       "name": ".401 Winchester Self-Loading (1910 SL)",
-      "category": "American & European Hunting",
+      "category": "Standard American & European Hunting",
       "standard": "SAAMI",
       "units": "imperial",
       "rim_type": "semi_rimmed",
@@ -1491,7 +1491,7 @@ export const HUNTING_CARTRIDGES: Record<string, CartridgeSpec> = {
   "85x55_blaser": {
       "id": "85x55_blaser",
       "name": "8.5x55mm Blaser",
-      "category": "American & European Hunting",
+      "category": "Standard American & European Hunting",
       "standard": "CIP",
       "units": "metric",
       "rim_type": "rebated",
@@ -1524,7 +1524,7 @@ export const HUNTING_CARTRIDGES: Record<string, CartridgeSpec> = {
   "95x57_mannlicher": {
       "id": "95x57_mannlicher",
       "name": "9.5x57mm Mannlicher-Schönauer (.375 Rimless NE)",
-      "category": "American & European Hunting",
+      "category": "Standard American & European Hunting",
       "standard": "CIP",
       "units": "metric",
       "rim_type": "rimless",
@@ -1557,7 +1557,7 @@ export const HUNTING_CARTRIDGES: Record<string, CartridgeSpec> = {
   "32_35_stevens": {
       "id": "32_35_stevens",
       "name": ".32-35 Stevens & Maynard",
-      "category": "American & European Hunting",
+      "category": "Standard American & European Hunting",
       "standard": "SAAMI",
       "units": "imperial",
       "rim_type": "rimmed",
@@ -1590,7 +1590,7 @@ export const HUNTING_CARTRIDGES: Record<string, CartridgeSpec> = {
   "219_zipper": {
     "id": "219_zipper",
     "name": ".219 Zipper",
-    "category": "Hunting & Sporting Rifles",
+    "category": "Standard American & European Hunting",
     "standard": "SAAMI",
     "units": "imperial",
     "rim_type": "rimmed",
@@ -1623,7 +1623,7 @@ export const HUNTING_CARTRIDGES: Record<string, CartridgeSpec> = {
   "56x50_magnum": {
     "id": "56x50_magnum",
     "name": "5.6x50mm Magnum",
-    "category": "Hunting & Sporting Rifles",
+    "category": "Standard American & European Hunting",
     "standard": "CIP",
     "units": "imperial",
     "rim_type": "rimless",
@@ -1656,7 +1656,7 @@ export const HUNTING_CARTRIDGES: Record<string, CartridgeSpec> = {
   "56x52r": {
     "id": "56x52r",
     "name": "5.6x52mmR (.22 Savage High-Power)",
-    "category": "Hunting & Sporting Rifles",
+    "category": "Standard American & European Hunting",
     "standard": "CIP",
     "units": "imperial",
     "rim_type": "rimmed",
@@ -1689,7 +1689,7 @@ export const HUNTING_CARTRIDGES: Record<string, CartridgeSpec> = {
   "7x65r_brenneke": {
     "id": "7x65r_brenneke",
     "name": "7x65mmR Brenneke",
-    "category": "Hunting & Sporting Rifles",
+    "category": "Standard American & European Hunting",
     "standard": "CIP",
     "units": "imperial",
     "rim_type": "rimmed",

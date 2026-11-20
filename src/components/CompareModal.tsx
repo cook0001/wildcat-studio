@@ -25,6 +25,14 @@ export const CompareModal: React.FC<CompareModalProps> = ({
     return Object.values({ ...CARTRIDGE_PRESETS, ...customCartridges });
   }, [customCartridges]);
 
+  const volumetricsById = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof calculateVolumetrics>>();
+    for (const c of allCartridges) {
+      map.set(c.id, calculateVolumetrics(c));
+    }
+    return map;
+  }, [allCartridges]);
+
   const filteredCartridges = useMemo(() => {
     const q = search.trim().toLowerCase();
     return allCartridges.filter((c) => {
@@ -155,7 +163,7 @@ export const CompareModal: React.FC<CompareModalProps> = ({
             </div>
           ) : (
             filteredCartridges.map((c) => {
-              const vol = calculateVolumetrics(c);
+              const vol = volumetricsById.get(c.id) || calculateVolumetrics(c);
 
               return (
                 <div

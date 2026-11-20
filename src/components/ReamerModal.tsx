@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CartridgeSpec } from '../types/cartridge';
 import { generateReamerSpecFrontend } from '../utils/volumetrics';
 import { saveExportFile, openStandalonePrintWindow, openNativePdfPrint, isTypstAvailable, compileTypstToPdf } from '../utils/fileExport';
 import { generateReamerTypst } from '../utils/typstTemplates';
+import { escapeHtml } from '../utils/cartridgeHelpers';
 import { Check, Copy, Printer, Wrench, Download, Building, Compass, FileText } from 'lucide-react';
 import { ReamerCADShopPrint } from './reamer/ReamerCADShopPrint';
 
@@ -31,6 +32,10 @@ export const ReamerModal: React.FC<ReamerModalProps> = ({ cartridge, isMetric })
   const [bulletTarget, setBulletTarget] = useState<string>(`${cartridge.bullet_weight_grains}gr Match Target`);
   const [specialNotes, setSpecialNotes] = useState<string>('Please supply with 5-piece floating bushing assortment.');
 
+  useEffect(() => {
+    setBulletTarget(`${cartridge.bullet_weight_grains}gr Match Target`);
+  }, [cartridge.id, cartridge.bullet_weight_grains]);
+
   const baseReamer = generateReamerSpecFrontend(cartridge);
 
   // Compute Neck Diameter based on Neck Fit Selection
@@ -42,6 +47,15 @@ export const ReamerModal: React.FC<ReamerModalProps> = ({ cartridge, isMetric })
   const chamberBaseDia = baseReamer.chamber_base_dia + rougherOffset;
   const chamberShoulderDia = baseReamer.chamber_shoulder_dia + rougherOffset;
   const chamberLen = baseReamer.chamber_length + (toolType === 'rougher' ? -0.030 : 0);
+
+  const customReamerSpec = {
+    ...baseReamer,
+    chamber_base_dia: chamberBaseDia,
+    chamber_shoulder_dia: chamberShoulderDia,
+    chamber_neck_dia: chamberNeckDia,
+    chamber_length: chamberLen,
+    leade_angle_deg: leadeAngle,
+  };
 
   // Bushing Range for Floating Pilot
   const nominalBore = baseReamer.pilot_diameter;
@@ -126,7 +140,7 @@ Date: ${new Date().toLocaleDateString()}
     const typstOk = await isTypstAvailable();
     if (typstOk) {
       try {
-        const typstCode = generateReamerTypst(cartridge, baseReamer, manufacturerNames[manufacturer]);
+        const typstCode = generateReamerTypst(cartridge, customReamerSpec, manufacturerNames[manufacturer]);
         const pdfBytes = await compileTypstToPdf(typstCode);
         await saveExportFile({
           defaultFileName: `Reamer_Order_${manufacturer.toUpperCase()}_${cartridge.id}.pdf`,
@@ -155,7 +169,7 @@ Date: ${new Date().toLocaleDateString()}
     const typstOk = await isTypstAvailable();
     if (typstOk) {
       try {
-        const typstCode = generateReamerTypst(cartridge, baseReamer, manufacturerNames[manufacturer]);
+        const typstCode = generateReamerTypst(cartridge, customReamerSpec, manufacturerNames[manufacturer]);
         const pdfBytes = await compileTypstToPdf(typstCode);
         // Opens directly in Preview.app on macOS for instant toolroom printing!
         await openNativePdfPrint(pdfBytes, `Reamer_Order_${cartridge.name}`);
@@ -166,19 +180,20 @@ Date: ${new Date().toLocaleDateString()}
     }
 
     const orderText = generateOrderText();
+    const safeName = escapeHtml(cartridge.name);
     const printHtml = `
       <!DOCTYPE html>
       <html>
         <head>
           <meta charset="utf-8" />
-          <title>Reamer Specification - ${cartridge.name}</title>
+          <title>Reamer Specification - ${safeName}</title>
           <style>
             @page { size: letter portrait; margin: 0.5in; }
             body { font-family: -apple-system, BlinkMacSystemFont, 'SF Mono', 'Segoe UI Mono', monospace; font-size: 11px; line-height: 1.45; color: #000; padding: 24px; white-space: pre-wrap; }
             @media print { body { padding: 0; } }
           </style>
         </head>
-        <body>${orderText}</body>
+        <body>${escapeHtml(orderText)}</body>
       </html>
     `;
     await openStandalonePrintWindow(printHtml, `Reamer Order - ${cartridge.name}`);

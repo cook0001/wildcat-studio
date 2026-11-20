@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { CartridgeSpec, ToleranceDisplayMode } from '../types/cartridge';
+import { isAutoUpdateEnabled, setAutoUpdateEnabled } from '../utils/cartridgeHelpers';
 import { 
   Layers, 
   Box, 
@@ -164,9 +165,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [isAboutOpen, setIsAboutOpen] = useState<boolean>(false);
   const [isLicenseOpen, setIsLicenseOpen] = useState<boolean>(false);
   const [isDesignerModalOpen, setIsDesignerModalOpen] = useState<boolean>(false);
-  const [checkUpdatesStartup, setCheckUpdatesStartup] = useState<boolean>(() => {
-    return localStorage.getItem('wildcat_check_updates_startup') !== 'false';
-  });
+  const [checkUpdatesStartup, setCheckUpdatesStartup] = useState<boolean>(() => isAutoUpdateEnabled());
   const menuBarRef = useRef<HTMLDivElement>(null);
 
   // Close menus on outside click or Escape key
@@ -1073,7 +1072,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   onClick={() => {
                     const next = !checkUpdatesStartup;
                     setCheckUpdatesStartup(next);
-                    localStorage.setItem('wildcat_check_updates_startup', String(next));
+                    setAutoUpdateEnabled(next);
                   }}
                   onMouseEnter={handleItemHover}
                   onMouseLeave={handleItemLeave}

@@ -10,9 +10,16 @@ import {
 } from './utils/volumetrics';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { check, Update } from '@tauri-apps/plugin-updater';
 import { loadCustomCartridges, saveCustomCartridge, deleteCustomCartridge } from './utils/customCartridges';
 import { useHistory } from './utils/useHistory';
-import { saveExportFile } from './utils/fileExport';
+import { saveExportFile, SaveExportOptions } from './utils/fileExport';
+import {
+  buildDxfDrawing,
+  buildQuickloadVol,
+  generateCartridgeStlBinary,
+  isAutoUpdateEnabled,
+} from './utils/cartridgeHelpers';
 import { ToastProvider, useToast } from './components/common/Toast';
 import { Navbar, ViewMode } from './components/Navbar';
 import { VolumetricHUD } from './components/VolumetricHUD';
@@ -35,7 +42,7 @@ import { UpdateModal } from './components/modals/UpdateModal';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 function AppContent() {
-  const { showSuccess, showError } = useToast();
+  const { showSuccess, showError, showInfo } = useToast();
   const {
     state: cartridge,
     set: setCartridge,
@@ -60,6 +67,7 @@ function AppContent() {
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState<boolean>(false);
   const [isUpdateAvailable, setIsUpdateAvailable] = useState<boolean>(false);
   const [updateVersion, setUpdateVersion] = useState<string>('');
+  const [pendingUpdate, setPendingUpdate] = useState<Update | null>(null);
   const [draftingStandard, setDraftingStandard] = useState<DraftingStandard>('saami');
   const [toleranceMode, setToleranceMode] = useState<ToleranceDisplayMode>('nominal');
   const [ghostCartridge, setGhostCartridge] = useState<CartridgeSpec | null>(null);
@@ -104,10 +112,9 @@ function AppContent() {
   // Global Keyboard Shortcuts: Cmd+B (Sidebar), Cmd+O (Open Cartridge), Cmd+S (Save), Cmd+W (Wildcat Wizard), Cmd+P (Print)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (
-        document.activeElement?.tagName === 'INPUT' ||
-        document.activeElement?.tagName === 'TEXTAREA'
-      ) {
+      const active = document.activeElement as HTMLElement | null;
+      const tag = active?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || active?.isContentEditable) {
         return;
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') {
@@ -138,6 +145,37 @@ function AppContent() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  // Silent startup update check in Tauri when auto-check is enabled
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window) || !isAutoUpdateEnabled()) {
+      return;
+    }
+    let cancelled = false;
+    let detectedUpdate: Update | null = null;
+    check()
+      .then((update) => {
+        if (cancelled) {
+          update?.close().catch(() => {});
+          return;
+        }
+        if (update?.available) {
+          detectedUpdate = update;
+          setPendingUpdate(update);
+          setIsUpdateAvailable(true);
+          setUpdateVersion(update.version);
+          showInfo(
+            `Update v${update.version} Available`,
+            'Click the green Update badge in the top bar to download and install.'
+          );
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+      detectedUpdate?.close().catch(() => {});
+    };
+  }, [showInfo]);
 
   // Handle cold-start and runtime file opens via macOS File Associations and Drag-Drop
   useEffect(() => {
@@ -255,123 +293,131 @@ function AppContent() {
     }
   };
 
-  const handleExportWildcat = async () => {
-    const jsonText = exportWildcatSpec(cartridge);
-    const res = await saveExportFile({
-      defaultFileName: `${cartridge.name.replace(/[^a-zA-Z0-9_-]/g, '_')}.wildcat`,
-      filters: [{ name: 'Wildcat Cartridge Spec', extensions: ['wildcat', 'wcs', 'json'] }],
-      content: jsonText,
-      mimeType: 'application/vnd.wildcatstudio.cartridge+json;charset=utf-8',
-      title: 'Export Wildcat Cartridge Specification'
-    });
+  const safeBaseName = cartridge.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+  const exportAndNotify = async (options: SaveExportOptions, successTitle: string) => {
+    const res = await saveExportFile(options);
     if (res.success && res.path) {
-      showSuccess('Wildcat Spec Exported', `Saved to ${res.path}`);
+      showSuccess(successTitle, `Saved to ${res.path}`);
     } else if (res.error) {
       showError('Export Failed', res.error);
     }
   };
 
-  const handleExportLoadBench = async () => {
-    const jsonText = exportLoadBenchRecipe(cartridge);
-    const res = await saveExportFile({
-      defaultFileName: `${cartridge.name.replace(/[^a-zA-Z0-9_-]/g, '_')}.loadbench`,
-      filters: [{ name: 'LoadBench Project Recipe', extensions: ['loadbench', 'json'] }],
-      content: jsonText,
-      mimeType: 'application/vnd.loadbench.recipe+json;charset=utf-8',
-      title: 'Export to LoadBench Project Recipe'
-    });
-    if (res.success && res.path) {
-      showSuccess('LoadBench Recipe Exported', `Saved to ${res.path}`);
-    } else if (res.error) {
-      showError('Export Failed', res.error);
-    }
+  const handleExportWildcat = () =>
+    exportAndNotify(
+      {
+        defaultFileName: `${safeBaseName}.wildcat`,
+        filters: [{ name: 'Wildcat Cartridge Spec', extensions: ['wildcat', 'wcs', 'json'] }],
+        content: exportWildcatSpec(cartridge),
+        mimeType: 'application/vnd.wildcatstudio.cartridge+json;charset=utf-8',
+        title: 'Export Wildcat Cartridge Specification',
+      },
+      'Wildcat Spec Exported'
+    );
+
+  const handleExportLoadBench = () =>
+    exportAndNotify(
+      {
+        defaultFileName: `${safeBaseName}.loadbench`,
+        filters: [{ name: 'LoadBench Project Recipe', extensions: ['loadbench', 'json'] }],
+        content: exportLoadBenchRecipe(cartridge),
+        mimeType: 'application/vnd.loadbench.recipe+json;charset=utf-8',
+        title: 'Export to LoadBench Project Recipe',
+      },
+      'LoadBench Recipe Exported'
+    );
+
+  const handleExportQuickload = async () =>
+    exportAndNotify(
+      {
+        defaultFileName: `${safeBaseName}.vol`,
+        filters: [{ name: 'QuickLOAD Volumetric Data', extensions: ['vol', 'txt'] }],
+        content: await buildQuickloadVol(cartridge),
+        mimeType: 'text/plain;charset=utf-8',
+        title: 'Export QuickLOAD Volumetric Data',
+      },
+      'QuickLOAD Data Exported'
+    );
+
+  const handleExportQuickLoadQdf = () =>
+    exportAndNotify(
+      {
+        defaultFileName: `${safeBaseName}.qdf`,
+        filters: [{ name: 'QuickLOAD QDF Data', extensions: ['qdf', 'dat', 'txt'] }],
+        content: exportQuickLoadQDF(cartridge),
+        mimeType: 'text/plain;charset=utf-8',
+        title: 'Export QuickLOAD QDF File',
+      },
+      'QuickLOAD QDF Exported'
+    );
+
+  const handleExportRangeStudio = () =>
+    exportAndNotify(
+      {
+        defaultFileName: `${safeBaseName}.rsb`,
+        filters: [{ name: 'RangeStudio Ballistics Profile', extensions: ['rsb', 'json'] }],
+        content: exportRangeStudioBallistics(cartridge),
+        mimeType: 'application/vnd.rangestudio.ballistics+json;charset=utf-8',
+        title: 'Export RangeStudio Ballistics Profile',
+      },
+      'RangeStudio Profile Exported'
+    );
+
+  const handleExportDxf = async () =>
+    exportAndNotify(
+      {
+        defaultFileName: `${cartridge.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}.dxf`,
+        filters: [{ name: 'AutoCAD DXF Drawing', extensions: ['dxf'] }],
+        content: await buildDxfDrawing(cartridge),
+        mimeType: 'application/dxf',
+        title: 'Export AutoCAD DXF Drawing',
+      },
+      'AutoCAD DXF Exported'
+    );
+
+  const handleExportStl = async () => {
+    const stlBytes = generateCartridgeStlBinary(cartridge);
+    await exportAndNotify(
+      {
+        defaultFileName: `${cartridge.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}_3d_print.stl`,
+        filters: [{ name: 'STL 3D Mesh (Binary)', extensions: ['stl'] }],
+        content: stlBytes,
+        mimeType: 'model/stl',
+        title: 'Export 3D Printable STL Mesh',
+      },
+      '3D STL Mesh Exported'
+    );
   };
 
-  const handleExportQuickload = async () => {
-    const volContent = `${cartridge.name}\n${volumetrics.overflow_capacity_grains_h2o.toFixed(2)}\n${cartridge.bullet_diameter.toFixed(4)}\n${cartridge.case_length.toFixed(4)}\n${cartridge.coal.toFixed(4)}`;
-    const res = await saveExportFile({
-      defaultFileName: `${cartridge.name.replace(/[^a-zA-Z0-9_-]/g, '_')}.vol`,
-      filters: [{ name: 'QuickLOAD Volumetric Data', extensions: ['vol', 'txt'] }],
-      content: volContent,
-      mimeType: 'text/plain;charset=utf-8',
-      title: 'Export QuickLOAD Volumetric Data'
-    });
-    if (res.success && res.path) {
-      showSuccess('QuickLOAD Data Exported', `Saved to ${res.path}`);
-    } else if (res.error) {
-      showError('Export Failed', res.error);
-    }
-  };
-
-  const handleExportQuickLoadQdf = async () => {
-    const qdfText = exportQuickLoadQDF(cartridge);
-    const res = await saveExportFile({
-      defaultFileName: `${cartridge.name.replace(/[^a-zA-Z0-9_-]/g, '_')}.qdf`,
-      filters: [{ name: 'QuickLOAD QDF Data', extensions: ['qdf', 'dat', 'txt'] }],
-      content: qdfText,
-      mimeType: 'text/plain;charset=utf-8',
-      title: 'Export QuickLOAD QDF File'
-    });
-    if (res.success && res.path) {
-      showSuccess('QuickLOAD QDF Exported', `Saved to ${res.path}`);
-    } else if (res.error) {
-      showError('Export Failed', res.error);
-    }
-  };
-
-  // RangeStudio Ballistics Profile Export
-  const handleExportRangeStudio = async () => {
-    const rsbJson = exportRangeStudioBallistics(cartridge);
-    const res = await saveExportFile({
-      defaultFileName: `${cartridge.name.replace(/[^a-zA-Z0-9_-]/g, '_')}.rsb`,
-      filters: [{ name: 'RangeStudio Ballistics Profile', extensions: ['rsb', 'json'] }],
-      content: rsbJson,
-      mimeType: 'application/vnd.rangestudio.ballistics+json;charset=utf-8',
-      title: 'Export RangeStudio Ballistics Profile'
-    });
-    if (res.success && res.path) {
-      showSuccess('RangeStudio Profile Exported', `Saved to ${res.path}`);
-    } else if (res.error) {
-      showError('Export Failed', res.error);
-    }
-  };
-
-  // AutoCAD DXF Export
-  const handleExportDxf = async () => {
-    let out = "0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n0\nENDSEC\n";
-    out += "0\nSECTION\n2\nTABLES\n0\nTABLE\n2\nLAYER\n70\n3\n";
-    out += "0\nLAYER\n2\nCARTRIDGE\n70\n0\n62\n2\n6\nCONTINUOUS\n";
-    out += "0\nLAYER\n2\nBULLET\n70\n0\n62\n1\n6\nCONTINUOUS\n";
-    out += "0\nLAYER\n2\nCENTERLINE\n70\n0\n62\n8\n6\nCONTINUOUS\n";
-    out += "0\nENDTAB\n0\nENDSEC\n";
-    out += "0\nSECTION\n2\nENTITIES\n";
-
-    // Centerline
-    out += `0\nLINE\n8\nCENTERLINE\n10\n-0.1\n20\n0.0\n30\n0.0\n11\n${(cartridge.coal + 0.1).toFixed(4)}\n21\n0.0\n31\n0.0\n`;
-
-    // Case Head & Mouth
-    const rRim = cartridge.rim_diameter / 2;
-    out += `0\nLINE\n8\nCARTRIDGE\n10\n0.0\n20\n${(-rRim).toFixed(4)}\n30\n0.0\n11\n0.0\n21\n${rRim.toFixed(4)}\n31\n0.0\n`;
-
-    out += "0\nENDSEC\n0\nEOF\n";
-
-    const res = await saveExportFile({
-      defaultFileName: `${cartridge.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}.dxf`,
-      filters: [{ name: 'AutoCAD DXF Drawing', extensions: ['dxf'] }],
-      content: out,
-      mimeType: 'application/dxf',
-      title: 'Export AutoCAD DXF Drawing'
-    });
-    if (res.success && res.path) {
-      showSuccess('AutoCAD DXF Exported', `Saved to ${res.path}`);
-    } else if (res.error) {
-      showError('Export Failed', res.error);
-    }
-  };
-
-  // Trigger 3D Viewport STL download
-  const handleExportStl = () => {
-    setViewMode('three');
+  const sharedBlueprintProps = {
+    cartridge,
+    onDrawingModeChange: setDrawingMode,
+    draftingStandard,
+    onDraftingStandardChange: setDraftingStandard,
+    toleranceMode,
+    onToleranceModeChange: setToleranceMode,
+    showChamber,
+    onToggleChamber: () => setShowChamber((prev) => !prev),
+    showDimensions,
+    onToggleDimensions: () => setShowDimensions((prev) => !prev),
+    showBullet,
+    onToggleBullet: () => setShowBullet((prev) => !prev),
+    showGrid,
+    onToggleGrid: () => setShowGrid((prev) => !prev),
+    isMetric,
+    isOneToOne,
+    ppi,
+    onPpiChange: setPpi,
+    onUpdateCartridge: setCartridge,
+    rotation: canvasRotation,
+    onRotationChange: setCanvasRotation,
+    ghostCartridge,
+    ghostAlign,
+    onChangeGhostAlign: setGhostAlign,
+    onCloseGhost: handleClearGhost,
+    onOpenCompare: () => setIsCompareModalOpen(true),
+    onOpenCalibration: () => setIsCalibrationModalOpen(true),
   };
 
   return (
@@ -500,37 +546,11 @@ function AppContent() {
 
         {/* Center Viewport */}
         <main style={{ flex: 1, height: '100%', position: 'relative', overflow: 'hidden' }}>
-          {viewMode === 'blueprint' && (
+          {(viewMode === 'blueprint' || viewMode === 'cutaway') && (
             <BlueprintCanvas
-              cartridge={cartridge}
-              mode="blueprint"
-              drawingMode={drawingMode}
-              onDrawingModeChange={setDrawingMode}
-              draftingStandard={draftingStandard}
-              onDraftingStandardChange={setDraftingStandard}
-              toleranceMode={toleranceMode}
-              onToleranceModeChange={setToleranceMode}
-              showChamber={showChamber}
-              onToggleChamber={() => setShowChamber(!showChamber)}
-              showDimensions={showDimensions}
-              onToggleDimensions={() => setShowDimensions(!showDimensions)}
-              showBullet={showBullet}
-              onToggleBullet={() => setShowBullet(!showBullet)}
-              showGrid={showGrid}
-              onToggleGrid={() => setShowGrid(!showGrid)}
-              isMetric={isMetric}
-              isOneToOne={isOneToOne}
-              ppi={ppi}
-              onPpiChange={setPpi}
-              onUpdateCartridge={setCartridge}
-              rotation={canvasRotation}
-              onRotationChange={setCanvasRotation}
-              ghostCartridge={ghostCartridge}
-              ghostAlign={ghostAlign}
-              onChangeGhostAlign={setGhostAlign}
-              onCloseGhost={handleClearGhost}
-              onOpenCompare={() => setIsCompareModalOpen(true)}
-              onOpenCalibration={() => setIsCalibrationModalOpen(true)}
+              {...sharedBlueprintProps}
+              mode={viewMode}
+              drawingMode={viewMode === 'cutaway' ? 'cutaway' : drawingMode}
             />
           )}
 
@@ -538,35 +558,9 @@ function AppContent() {
             <div style={{ display: 'flex', width: '100%', height: '100%' }}>
               <div style={{ flex: 1, height: '100%', borderRight: '1px solid var(--border-color)', position: 'relative' }}>
                 <BlueprintCanvas
-                  cartridge={cartridge}
+                  {...sharedBlueprintProps}
                   mode="blueprint"
                   drawingMode={drawingMode}
-                  onDrawingModeChange={setDrawingMode}
-                  draftingStandard={draftingStandard}
-                  onDraftingStandardChange={setDraftingStandard}
-                  toleranceMode={toleranceMode}
-                  onToleranceModeChange={setToleranceMode}
-                  showChamber={showChamber}
-                  onToggleChamber={() => setShowChamber(!showChamber)}
-                  showDimensions={showDimensions}
-                  onToggleDimensions={() => setShowDimensions(!showDimensions)}
-                  showBullet={showBullet}
-                  onToggleBullet={() => setShowBullet(!showBullet)}
-                  showGrid={showGrid}
-                  onToggleGrid={() => setShowGrid(!showGrid)}
-                  isMetric={isMetric}
-                  isOneToOne={isOneToOne}
-                  ppi={ppi}
-                  onPpiChange={setPpi}
-                  onUpdateCartridge={setCartridge}
-                  rotation={canvasRotation}
-                  onRotationChange={setCanvasRotation}
-                  ghostCartridge={ghostCartridge}
-                  ghostAlign={ghostAlign}
-                  onChangeGhostAlign={setGhostAlign}
-                  onCloseGhost={handleClearGhost}
-                  onOpenCompare={() => setIsCompareModalOpen(true)}
-                  onOpenCalibration={() => setIsCalibrationModalOpen(true)}
                 />
               </div>
               <div style={{ flex: 1, height: '100%', position: 'relative' }}>
@@ -578,40 +572,6 @@ function AppContent() {
                 />
               </div>
             </div>
-          )}
-
-          {viewMode === 'cutaway' && (
-            <BlueprintCanvas
-              cartridge={cartridge}
-              mode="cutaway"
-              drawingMode="cutaway"
-              onDrawingModeChange={setDrawingMode}
-              draftingStandard={draftingStandard}
-              onDraftingStandardChange={setDraftingStandard}
-              toleranceMode={toleranceMode}
-              onToleranceModeChange={setToleranceMode}
-              showChamber={showChamber}
-              onToggleChamber={() => setShowChamber(!showChamber)}
-              showDimensions={showDimensions}
-              onToggleDimensions={() => setShowDimensions(!showDimensions)}
-              showBullet={showBullet}
-              onToggleBullet={() => setShowBullet(!showBullet)}
-              showGrid={showGrid}
-              onToggleGrid={() => setShowGrid(!showGrid)}
-              isMetric={isMetric}
-              isOneToOne={isOneToOne}
-              ppi={ppi}
-              onPpiChange={setPpi}
-              onUpdateCartridge={setCartridge}
-              rotation={canvasRotation}
-              onRotationChange={setCanvasRotation}
-              ghostCartridge={ghostCartridge}
-              ghostAlign={ghostAlign}
-              onChangeGhostAlign={setGhostAlign}
-              onCloseGhost={handleClearGhost}
-              onOpenCompare={() => setIsCompareModalOpen(true)}
-              onOpenCalibration={() => setIsCalibrationModalOpen(true)}
-            />
           )}
 
           {viewMode === 'three' && (
@@ -779,9 +739,11 @@ function AppContent() {
       <UpdateModal
         isOpen={isUpdateModalOpen}
         onClose={() => setIsUpdateModalOpen(false)}
+        availableUpdate={pendingUpdate}
         onUpdateAvailableChange={(available, ver) => {
           setIsUpdateAvailable(available);
-          if (ver) setUpdateVersion(ver);
+          setUpdateVersion(ver || '');
+          if (!available) setPendingUpdate(null);
         }}
       />
     </div>

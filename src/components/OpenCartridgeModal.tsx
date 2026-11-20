@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { CartridgeSpec, CARTRIDGE_CATEGORIES } from '../types/cartridge';
-import { isCustomCartridge } from '../utils/customCartridges';
 import { calculateVolumetricsFrontend, isStraightWall, getOuterRadiusAt, parseWildcatSpec } from '../utils/volumetrics';
+import { useToast } from './common/Toast';
 import { 
   FolderOpen, 
   Search, 
@@ -35,11 +35,13 @@ export const OpenCartridgeModal: React.FC<OpenCartridgeModalProps> = ({
   onImportCartridge,
   isMetric,
 }) => {
+  const { showError } = useToast();
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [selectedCaliberFilter, setSelectedCaliberFilter] = useState<string>('ALL');
   const [selectedStandard, setSelectedStandard] = useState<string>('ALL');
   const [highlightedId, setHighlightedId] = useState<string>(currentCartridgeId);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const listContainerRef = useRef<HTMLDivElement>(null);
@@ -49,11 +51,16 @@ export const OpenCartridgeModal: React.FC<OpenCartridgeModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setHighlightedId(currentCartridgeId);
+      setConfirmDeleteId(null);
       setTimeout(() => {
         searchInputRef.current?.focus();
       }, 50);
     }
   }, [isOpen, currentCartridgeId]);
+
+  useEffect(() => {
+    setConfirmDeleteId(null);
+  }, [highlightedId]);
 
   // Flatten and prepare cartridges array
   const cartridgeList = useMemo(() => {
@@ -79,7 +86,7 @@ export const OpenCartridgeModal: React.FC<OpenCartridgeModalProps> = ({
       // Category filter
       if (selectedCategory !== 'ALL') {
         if (selectedCategory === 'CUSTOM') {
-          if (!isCustomCartridge(c.id)) return false;
+          if (!customCartridges[c.id]) return false;
         } else {
           if (c.category !== selectedCategory) return false;
         }
@@ -116,7 +123,7 @@ export const OpenCartridgeModal: React.FC<OpenCartridgeModalProps> = ({
 
       return true;
     });
-  }, [cartridgeList, searchQuery, selectedCategory, selectedCaliberFilter, selectedStandard]);
+  }, [cartridgeList, customCartridges, searchQuery, selectedCategory, selectedCaliberFilter, selectedStandard]);
 
   // If highlighted cartridge is no longer in filtered list, pick the first
   useEffect(() => {
@@ -187,10 +194,10 @@ export const OpenCartridgeModal: React.FC<OpenCartridgeModalProps> = ({
           onSelectCartridge(parsed);
           onClose();
         } else {
-          console.warn('Unable to parse cartridge specification format:', file.name);
+          showError('Import Failed', `Could not parse "${file.name}" as a supported cartridge specification.`);
         }
       } catch (err) {
-        console.error('Failed to import cartridge file:', err);
+        showError('Import Failed', err instanceof Error ? err.message : `Failed to import "${file.name}".`);
       }
     };
     reader.readAsText(file);
@@ -789,7 +796,7 @@ export const OpenCartridgeModal: React.FC<OpenCartridgeModalProps> = ({
                 filteredCartridges.map((c) => {
                   const isHighlighted = c.id === highlightedId;
                   const isActive = c.id === currentCartridgeId;
-                  const isCustom = isCustomCartridge(c.id);
+                  const isCustom = Boolean(customCartridges[c.id]);
                   const isStraight = isStraightWall(c);
 
                   return (
@@ -1131,32 +1138,68 @@ export const OpenCartridgeModal: React.FC<OpenCartridgeModalProps> = ({
                     <ArrowRight size={16} strokeWidth={2.5} />
                   </button>
 
-                  {isCustomCartridge(highlightedCartridge.id) && onDeleteCustomCartridge && (
-                    <button
-                      id="btn-delete-selected-custom"
-                      onClick={() => {
-                        if (confirm(`Are you sure you want to delete "${highlightedCartridge.name}" from your database?`)) {
-                          onDeleteCustomCartridge(highlightedCartridge.id);
-                        }
-                      }}
-                      style={{
-                        background: 'rgba(239, 68, 68, 0.15)',
-                        color: '#ef4444',
-                        border: '1px solid rgba(239, 68, 68, 0.3)',
-                        borderRadius: '6px',
-                        padding: '6px 12px',
-                        fontWeight: 600,
-                        fontSize: '11px',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px',
-                      }}
-                    >
-                      <Trash2 size={13} />
-                      <span>Delete From Database</span>
-                    </button>
+                  {Boolean(customCartridges[highlightedCartridge.id]) && onDeleteCustomCartridge && (
+                    confirmDeleteId === highlightedCartridge.id ? (
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button
+                          id="btn-confirm-delete-custom"
+                          onClick={() => {
+                            onDeleteCustomCartridge(highlightedCartridge.id);
+                            setConfirmDeleteId(null);
+                          }}
+                          style={{
+                            flex: 1,
+                            background: 'rgba(239, 68, 68, 0.25)',
+                            color: '#f87171',
+                            border: '1px solid #ef4444',
+                            borderRadius: '6px',
+                            padding: '6px 10px',
+                            fontWeight: 700,
+                            fontSize: '11px',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Confirm Delete
+                        </button>
+                        <button
+                          onClick={() => setConfirmDeleteId(null)}
+                          style={{
+                            background: 'rgba(255,255,255,0.06)',
+                            color: 'var(--text-secondary)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '6px',
+                            padding: '6px 10px',
+                            fontWeight: 600,
+                            fontSize: '11px',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        id="btn-delete-selected-custom"
+                        onClick={() => setConfirmDeleteId(highlightedCartridge.id)}
+                        style={{
+                          background: 'rgba(239, 68, 68, 0.15)',
+                          color: '#ef4444',
+                          border: '1px solid rgba(239, 68, 68, 0.3)',
+                          borderRadius: '6px',
+                          padding: '6px 12px',
+                          fontWeight: 600,
+                          fontSize: '11px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                        }}
+                      >
+                        <Trash2 size={13} />
+                        <span>Delete From Database</span>
+                      </button>
+                    )
                   )}
                 </div>
               </>

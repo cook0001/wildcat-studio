@@ -1,72 +1,81 @@
-# Wildcat Studio (Source Core)
+# Wildcat Studio
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)
-![Build](https://img.shields.io/badge/QC-passing-brightgreen.svg)
-![Security](https://img.shields.io/badge/security-monitored-success.svg)
-![License](https://img.shields.io/badge/license-Proprietary%20Freeware-green.svg)
+![Version](https://img.shields.io/badge/version-1.1.1-blue.svg)
+![License](https://img.shields.io/badge/license-MIT-green.svg)
+![Tauri](https://img.shields.io/badge/tauri-v2-24C8DB.svg)
 
-This is the private source code repository for **Wildcat Studio**, the industrial-grade desktop computer-aided drafting (CAD) and internal ballistics volumetrics suite.
+Desktop cartridge CAD, chamber reamer specification, and internal ballistics volumetrics suite built with **Tauri 2**, **Rust**, **React 19**, **TypeScript**, and **Three.js**.
 
-> [!IMPORTANT]
-> **Confidential Source Code**: This repository contains proprietary mathematical algorithms, parametric definitions, and compiled native solvers. Public distribution is handled through [`cook0001/wildcat-studio`](https://github.com/cook0001/wildcat-studio), which hosts only compiled binaries, installation documentation, and cryptographic checksums.
+This repository ([`cook0001/wildcat-studio`](https://github.com/cook0001/wildcat-studio)) is the single public home for both source code and signed release builds.
 
 ---
 
-## Architecture
+## Downloads & Built-In Auto-Updater
 
-- **Frontend CAD & GUI Layer**: React 18, TypeScript, Tailwind/Vanilla CSS, Lucide vector icons, Canvas 2D vector drafting engine, and WebGL 3D lathe preview.
-- **Backend Native Core**: Rust (Tauri 2), Simpson composite 1000-slice numerical integrator, reamer tooling clearance solver, DXF/STL exporters, macOS/Windows native print bridges, and native OS document file associations (`.wildcat`, `.wcs`, `.vol`, `.loadbench`).
-- **Security & Obfuscation**:
-  - Terser variable/property mangling with top-level identifier scrambling.
-  - Zero sourcemap generation (`sourcemap: false`).
-  - Production DevTools and inspect element shortcut lockout.
-  - Stripped native release binaries (`opt-level = 3`, `lto = true`, `strip = true`).
+Installers for **macOS (Universal: Apple Silicon & Intel)**, **Windows (x64 & ARM64)**, and **Linux (x64 & ARM64: AppImage / deb / rpm)** are published on the [GitHub Releases](https://github.com/cook0001/wildcat-studio/releases) page alongside `SHA256SUMS.txt`.
 
----
-
-## Security Policy & Checksums
-
-- See [SECURITY.md](SECURITY.md) for vulnerability disclosure guidelines and security architecture.
-- Official release checksums are maintained in [SHA256SUMS.txt](SHA256SUMS.txt).
+- **Auto-Updater**: Release builds check [`latest.json`](https://github.com/cook0001/wildcat-studio/releases/latest/download/latest.json) via `@tauri-apps/plugin-updater`, download platform updates with progress feedback, verify signatures against the bundled Minisign public key, and relaunch natively (`restart_app`).
+- **Tauri Self-Signing**:
+  - **Updater payload signing**: Controlled by `bundle.createUpdaterArtifacts: true` in [`src-tauri/tauri.conf.json`](src-tauri/tauri.conf.json) and `TAURI_SIGNING_PRIVATE_KEY` (with optional `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`) during builds and [`.github/workflows/release.yml`](.github/workflows/release.yml).
+  - **macOS ad-hoc self-signing**: Configured via `"macOS": { "signingIdentity": "-" }` so local and CI macOS bundles are self-signed without an Apple Developer ID certificate. *(First launch on macOS without Apple notarization may require allowing the app in System Settings -> Privacy & Security.)*
 
 ---
 
-## Local Development & Quality Control
+## Architecture & Capabilities
+
+- **Frontend (`src/`)**: React 19, TypeScript, interactive SVG 2D blueprint/cutaway drafting canvas with direct dimension editing, Three.js 3D solid lathe viewport with cutaway & binary STL export, Miller twist stability, case forming, chamber setback, headspace gauge, and cartridge comparison tools.
+- **Rust Backend (`src-tauri/`)**: Tauri 2 desktop runtime, 1,000-slice composite Simpson volumetric integrator, chamber reamer clearance solver, rechamber setback analyzer, AutoCAD `.dxf` and QuickLOAD `.vol` generators, Typst PDF / native OS print bridges, and macOS/desktop document associations.
+- **File Interchange**: `.wildcat` / `.wcs`, QuickLOAD `.vol` / `.qdf`, LoadBench `.loadbench`, RangeStudio `.rsb`, AutoCAD `.dxf`, and binary `.stl` meshes.
+
+---
+
+## Local Development & Verification
 
 ```bash
 # Install frontend dependencies
 npm ci
 
-# Run development server with Hot Module Reloading (HMR)
+# Run desktop development app
 npm run tauri dev
 
-# Typecheck and production bundle verification
-npx tsc --noEmit
+# Frontend typecheck and production bundle
+npm run typecheck
 npm run build
 
-# Rust unit tests and strict linter
-cargo test --manifest-path src-tauri/Cargo.toml
+# Rust backend checks and unit tests
+cargo check --manifest-path src-tauri/Cargo.toml
 cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+cargo test --manifest-path src-tauri/Cargo.toml
+
+# Full pre-flight verification script
+npm run verify
 ```
+
+To create signed local release bundles with updater artifacts, set `TAURI_SIGNING_PRIVATE_KEY` (generated via `npx tauri signer generate`) in your environment before running `npm run tauri build`.
 
 ---
 
-## Precision Firearms Ecosystem
+## Security Policy & Checksums
 
-Wildcat Studio is engineered as part of the unified precision ballistics and firearms management ecosystem:
+- See [SECURITY.md](SECURITY.md) for vulnerability disclosure guidelines and binary hash verification.
+- Official release checksums are attached to every release in `SHA256SUMS.txt`.
 
-- **[ArmsTrader (armstrader.store)](https://armstrader.store)** — Free web tools and digital utilities suite for firearm owners (Firearm Bill of Sale Generator, Nationwide FFL Finder, Shooting Range Locator, and 50-State Gun Laws Directory). *Note: ArmsTrader is NOT a marketplace, broker, or dealer.*
-- **[ArmoryVault](https://github.com/cook0001/armoryvault)** — High-performance desktop firearm inventory, ATF compliance & vault logistics suite.
-- **[ArmoryVault Companion](https://armstrader.store/companion)** — Offline mobile firearm barcode scanner and encrypted LAN sync for Android.
-- **[LoadBench Studio](https://armstrader.store/loadbench)** — Industrial interior ballistics simulation, propellant combustion & chamber pressure modeling suite.
-- **[RangeStudio](https://armstrader.store/rangestudio)** — Precision exterior ballistics, 4th-order Runge-Kutta trajectory engine & optical reticle simulator.
+---
+
+## Reloading & Tooling Safety Disclaimer
+
+All dimensions, water capacity calculations, forming notes, and predicted pressures or trajectories are mathematical approximations intended strictly for drafting, chamber comparison, and reference. Always verify chamber headspace with physical GO / NO-GO / FIELD gauges and consult published reloading manuals before chambering barrels or assembling live ammunition.
+
+---
+
+## Related Projects
+
+- **[ArmsTrader (armstrader.store)](https://armstrader.store)** — Web utilities suite for firearm owners.
+- **[ArmoryVault](https://github.com/cook0001/armoryvault)** — Desktop firearm inventory, compliance & vault logistics suite.
+- **[LoadBench Studio](https://armstrader.store/loadbench)** & **[RangeStudio](https://armstrader.store/rangestudio)** — Companion interior/exterior ballistics tools.
 
 ---
 
 ## License
 
-Wildcat Studio is proprietary software provided free of charge for personal, non-commercial cartridge design and dimensional calculation under the [Wildcat Studio End User License Agreement](LICENSE). All Rights Reserved. Reverse engineering, decompilation, unauthorized redistribution, or commercial use without prior written authorization is prohibited.
-
----
-
-*Copyright © 2026 Wildcat Studio. All rights reserved.*
+Released under the [MIT License](LICENSE). Copyright (c) 2026 Daniel Cook / Wildcat Studio.

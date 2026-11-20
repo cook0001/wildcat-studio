@@ -24,51 +24,55 @@ export interface SaveResult {
  */
 export async function saveExportFile(options: SaveExportOptions): Promise<SaveResult> {
   const { defaultFileName, filters, content, mimeType = 'text/plain;charset=utf-8', title = 'Save File' } = options;
+  const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
-  try {
-    // Attempt native Tauri save dialog
-    const selectedPath = await save({
-      title,
-      defaultPath: defaultFileName,
-      filters: filters || [{ name: 'All Files', extensions: ['*'] }],
-    });
-
-    if (!selectedPath) {
-      return { success: false, cancelled: true };
-    }
-
-    if (typeof content === 'string') {
-      await writeTextFile(selectedPath, content);
-    } else {
-      await writeFile(selectedPath, content);
-    }
-
-    return { success: true, path: selectedPath };
-  } catch (tauriError) {
-    console.warn('Native Tauri save dialog failed or unavailable, falling back to browser download:', tauriError);
-
+  if (isTauri) {
     try {
-      // Browser fallback via object URL
-      const blob = typeof content === 'string'
-        ? new Blob([content], { type: mimeType })
-        : new Blob([content as unknown as BlobPart], { type: mimeType });
+      const selectedPath = await save({
+        title,
+        defaultPath: defaultFileName,
+        filters: filters || [{ name: 'All Files', extensions: ['*'] }],
+      });
 
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = defaultFileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      if (!selectedPath) {
+        return { success: false, cancelled: true };
+      }
 
-      return { success: true, path: defaultFileName };
-    } catch (browserError) {
+      if (typeof content === 'string') {
+        await writeTextFile(selectedPath, content);
+      } else {
+        await writeFile(selectedPath, content);
+      }
+
+      return { success: true, path: selectedPath };
+    } catch (tauriError) {
       return {
         success: false,
-        error: browserError instanceof Error ? browserError.message : String(browserError),
+        error: tauriError instanceof Error ? tauriError.message : String(tauriError),
       };
     }
+  }
+
+  try {
+    const blob = typeof content === 'string'
+      ? new Blob([content], { type: mimeType })
+      : new Blob([content as unknown as BlobPart], { type: mimeType });
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = defaultFileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    return { success: true, path: defaultFileName };
+  } catch (browserError) {
+    return {
+      success: false,
+      error: browserError instanceof Error ? browserError.message : String(browserError),
+    };
   }
 }
 

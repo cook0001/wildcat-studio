@@ -2,6 +2,7 @@ import React, { useRef } from 'react';
 import { CartridgeSpec } from '../types/cartridge';
 import { calculateVolumetrics, calculateReamerSpecs } from '../utils/volumetrics';
 import { openStandalonePrintWindow } from '../utils/fileExport';
+import { escapeHtml } from '../utils/cartridgeHelpers';
 import { Printer, X, FileText } from 'lucide-react';
 
 interface PrintableSheetProps {
@@ -39,7 +40,7 @@ export const PrintableSheet: React.FC<PrintableSheetProps> = ({
       <html>
         <head>
           <meta charset="utf-8" />
-          <title>${cartridge.name} - Engineering Specification Sheet</title>
+          <title>${escapeHtml(cartridge.name)} - Engineering Specification Sheet</title>
           <style>
             @page {
               size: letter landscape;

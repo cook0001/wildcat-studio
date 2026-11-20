@@ -51,6 +51,7 @@ export const ScreenCalibrationModal: React.FC<ScreenCalibrationModalProps> = ({
         position: 'fixed',
         inset: 0,
         backgroundColor: 'rgba(5, 7, 10, 0.85)',
+        WebkitBackdropFilter: 'blur(8px)',
         backdropFilter: 'blur(8px)',
         zIndex: 10000,
         display: 'flex',

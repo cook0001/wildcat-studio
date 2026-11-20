@@ -12,8 +12,8 @@ body:
     id: app_version
     attributes:
       label: Wildcat Studio Version
-      description: Found in the bottom status bar or Help dialog (e.g. v1.0.0).
-      placeholder: "e.g. v1.0.0"
+      description: Found in the Help / About dialog (e.g. v1.1.1).
+      placeholder: "e.g. v1.1.1"
     validations:
       required: true
 

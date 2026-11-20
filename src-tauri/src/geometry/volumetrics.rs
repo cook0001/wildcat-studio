@@ -5,81 +5,114 @@ pub const CU_IN_TO_CM3: f64 = 16.387064;
 pub const CM3_TO_GRAINS_H2O: f64 = 15.43235835;
 pub const CU_IN_TO_GRAINS_H2O: f64 = CU_IN_TO_CM3 * CM3_TO_GRAINS_H2O; // ~252.891
 
+pub fn is_straight_wall(spec: &CartridgeSpec) -> bool {
+    spec.shoulder_angle <= 0.05
+        || (spec.shoulder_length <= 0.002 && spec.shoulder_angle <= 0.05)
+        || spec.body_length >= spec.case_length - 0.005
+        || (spec.shoulder_start_diameter - spec.neck_diameter_mouth).abs() < 0.001
+}
+
+pub fn effective_shoulder_length(spec: &CartridgeSpec) -> f64 {
+    let r_shoulder_start = spec.shoulder_start_diameter / 2.0;
+    let r_neck_base = if spec.neck_diameter_base > 0.0 {
+        spec.neck_diameter_base / 2.0
+    } else {
+        spec.neck_diameter_mouth / 2.0
+    };
+    let delta_r = r_shoulder_start - r_neck_base;
+    if spec.shoulder_angle > 0.5 && delta_r > 0.001 {
+        let tan_angle = spec.shoulder_angle.to_radians().tan();
+        if tan_angle > 0.001 {
+            return delta_r / tan_angle;
+        }
+    }
+    spec.shoulder_length
+}
+
+fn lerp_taper(z: f64, z0: f64, z1: f64, r0: f64, r1: f64) -> f64 {
+    let fraction = ((z - z0) / (z1 - z0).max(0.001)).clamp(0.0, 1.0);
+    r0 + (r1 - r0) * fraction
+}
+
+fn get_tapered_body_radius_at(spec: &CartridgeSpec, z: f64, body_z_start: f64) -> f64 {
+    let r_base = spec.base_diameter / 2.0;
+    let r_shoulder_start = spec.shoulder_start_diameter / 2.0;
+    let r_neck_base = if spec.neck_diameter_base > 0.0 {
+        spec.neck_diameter_base / 2.0
+    } else {
+        spec.neck_diameter_mouth / 2.0
+    };
+    let r_neck_mouth = spec.neck_diameter_mouth / 2.0;
+    let z_shoulder_start = spec.body_length;
+    let z_shoulder_end = spec.body_length + effective_shoulder_length(spec);
+    let z_mouth = spec.case_length;
+
+    if is_straight_wall(spec) {
+        if z <= z_mouth {
+            lerp_taper(z, body_z_start, z_mouth, r_base, r_neck_mouth)
+        } else {
+            r_neck_mouth
+        }
+    } else if z <= z_shoulder_start {
+        lerp_taper(z, body_z_start, z_shoulder_start, r_base, r_shoulder_start)
+    } else if z <= z_shoulder_end {
+        lerp_taper(z, z_shoulder_start, z_shoulder_end, r_shoulder_start, r_neck_base)
+    } else if z <= z_mouth {
+        lerp_taper(z, z_shoulder_end, z_mouth, r_neck_base, r_neck_mouth)
+    } else {
+        r_neck_mouth
+    }
+}
+
 pub fn get_outer_radius_at(spec: &CartridgeSpec, z: f64) -> f64 {
     let r_rim = spec.rim_diameter / 2.0;
     let t_rim = spec.rim_thickness;
     let w_ext = spec.extractor_width;
     let r_ext = spec.extractor_diameter / 2.0;
-
     let z_body_start = t_rim + w_ext;
-    let r_base = spec.base_diameter / 2.0;
-
-    let z_shoulder_start = spec.body_length;
-    let r_shoulder_start = spec.shoulder_start_diameter / 2.0;
-
-    let z_shoulder_end = spec.body_length + spec.shoulder_length;
-    let r_neck_base = spec.neck_diameter_base / 2.0;
-
-    let z_mouth = spec.case_length;
-    let r_neck_mouth = spec.neck_diameter_mouth / 2.0;
-
-    let is_straight_wall = spec.shoulder_angle <= 0.05
-        || spec.shoulder_length <= 0.002
-        || spec.body_length >= spec.case_length - 0.005
-        || (spec.shoulder_start_diameter - spec.neck_diameter_mouth).abs() < 0.001;
+    let has_extractor_groove = !matches!(spec.rim_type, RimType::Rimmed | RimType::Rimfire);
 
     if z <= t_rim {
-        r_rim
-    } else if spec.rim_type != RimType::Rimless && spec.rim_type == RimType::Rimmed {
-        if is_straight_wall {
-            if z <= z_mouth {
-                let fraction = (z - t_rim) / (z_mouth - t_rim).max(0.001);
-                r_base + (r_neck_mouth - r_base) * fraction.clamp(0.0, 1.0)
-            } else {
-                r_neck_mouth
-            }
-        } else if z <= z_shoulder_start {
-            let fraction = (z - t_rim) / (z_shoulder_start - t_rim).max(0.001);
-            r_base + (r_shoulder_start - r_base) * fraction.clamp(0.0, 1.0)
-        } else if z <= z_shoulder_end {
-            let fraction = (z - z_shoulder_start) / (z_shoulder_end - z_shoulder_start).max(0.001);
-            r_shoulder_start + (r_neck_base - r_shoulder_start) * fraction.clamp(0.0, 1.0)
-        } else if z <= z_mouth {
-            let fraction = (z - z_shoulder_end) / (z_mouth - z_shoulder_end).max(0.001);
-            r_neck_base + (r_neck_mouth - r_neck_base) * fraction.clamp(0.0, 1.0)
-        } else {
-            r_neck_mouth
-        }
-    } else if z <= z_body_start {
-        // Extractor groove
-        r_ext
-    } else if spec.rim_type == RimType::Belted
-        && spec.belt_diameter.is_some()
-        && z <= z_body_start + spec.belt_width.unwrap_or(0.220)
-    {
-        spec.belt_diameter.unwrap() / 2.0
-    } else if is_straight_wall {
-        if z <= z_mouth {
-            let fraction = (z - z_body_start) / (z_mouth - z_body_start).max(0.001);
-            r_base + (r_neck_mouth - r_base) * fraction.clamp(0.0, 1.0)
-        } else {
-            r_neck_mouth
-        }
-    } else if z <= z_shoulder_start {
-        // Body taper
-        let fraction = (z - z_body_start) / (z_shoulder_start - z_body_start).max(0.001);
-        r_base + (r_shoulder_start - r_base) * fraction.clamp(0.0, 1.0)
-    } else if z <= z_shoulder_end {
-        // Shoulder taper
-        let fraction = (z - z_shoulder_start) / (z_shoulder_end - z_shoulder_start).max(0.001);
-        r_shoulder_start + (r_neck_base - r_shoulder_start) * fraction.clamp(0.0, 1.0)
-    } else if z <= z_mouth {
-        // Neck taper
-        let fraction = (z - z_shoulder_end) / (z_mouth - z_shoulder_end).max(0.001);
-        r_neck_base + (r_neck_mouth - r_neck_base) * fraction.clamp(0.0, 1.0)
-    } else {
-        r_neck_mouth
+        return r_rim;
     }
+    if has_extractor_groove && z <= z_body_start {
+        return r_ext;
+    }
+    if spec.rim_type == RimType::Belted {
+        if let Some(belt_dia) = spec.belt_diameter {
+            if z <= z_body_start + spec.belt_width.unwrap_or(0.220) {
+                return belt_dia / 2.0;
+            }
+        }
+    }
+
+    let body_z_start = if has_extractor_groove { z_body_start } else { t_rim };
+    get_tapered_body_radius_at(spec, z, body_z_start)
+}
+
+/// Chamber/reamer contact radius along the barrel axis (omits brass extractor groove).
+pub fn get_chamber_body_radius_at(spec: &CartridgeSpec, z: f64) -> f64 {
+    if z > spec.case_length {
+        return spec.bullet_diameter / 2.0;
+    }
+    let t_rim = spec.rim_thickness;
+    if matches!(spec.rim_type, RimType::Rimmed | RimType::Rimfire | RimType::SemiRimmed) && z <= t_rim {
+        return spec.rim_diameter / 2.0;
+    }
+    if spec.rim_type == RimType::Belted {
+        if let Some(belt_dia) = spec.belt_diameter {
+            let belt_end = t_rim + spec.extractor_width + spec.belt_width.unwrap_or(0.220);
+            if z <= belt_end {
+                return belt_dia / 2.0;
+            }
+        }
+    }
+    let body_z_start = if matches!(spec.rim_type, RimType::Rimmed | RimType::Rimfire) {
+        t_rim
+    } else {
+        t_rim + spec.extractor_width
+    };
+    get_tapered_body_radius_at(spec, z.max(body_z_start), body_z_start)
 }
 
 pub fn get_inner_radius_at(spec: &CartridgeSpec, z: f64) -> f64 {
@@ -242,6 +275,50 @@ mod tests {
             "Expected .308 overflow ~56 gr H2O, got {}", res.overflow_capacity_grains_h2o);
         assert!(res.usable_capacity_grains_h2o < res.overflow_capacity_grains_h2o);
         assert!(res.sectional_density > 0.240 && res.sectional_density < 0.260);
+    }
+
+    #[test]
+    fn test_rimfire_straight_wall_has_no_extractor_groove() {
+        let spec = CartridgeSpec {
+            id: "22_lr".into(),
+            name: ".22 Long Rifle".into(),
+            category: Some("Rimfire & Sub-Caliber".into()),
+            standard: "SAAMI".into(),
+            units: "imperial".into(),
+            rim_type: RimType::Rimfire,
+            rim_diameter: 0.278,
+            rim_thickness: 0.043,
+            extractor_diameter: 0.225,
+            extractor_width: 0.0,
+            extractor_angle: 0.0,
+            belt_diameter: None,
+            belt_width: None,
+            base_diameter: 0.226,
+            shoulder_start_diameter: 0.225,
+            body_length: 0.613,
+            shoulder_length: 0.0,
+            shoulder_angle: 0.0,
+            neck_diameter_base: 0.225,
+            neck_diameter_mouth: 0.225,
+            case_length: 0.613,
+            web_thickness: 0.035,
+            base_wall_thickness: 0.015,
+            neck_wall_thickness: 0.011,
+            primer_pocket_dia: 0.0,
+            primer_pocket_depth: 0.0,
+            flash_hole_dia: 0.0,
+            bullet_diameter: 0.223,
+            bullet_length: 0.450,
+            bullet_weight_grains: 40.0,
+            coal: 1.000,
+            seating_depth: 0.140,
+            max_pressure_bar: Some(1655.0),
+        };
+        assert!(is_straight_wall(&spec));
+        assert!((get_outer_radius_at(&spec, 0.020) - 0.139).abs() < 1e-6);
+        assert!((get_outer_radius_at(&spec, 0.100) - 0.1129).abs() < 1e-3);
+        let res = calculate_volumetrics(&spec);
+        assert!(res.overflow_capacity_grains_h2o > 3.0 && res.overflow_capacity_grains_h2o < 6.0);
     }
 }
 

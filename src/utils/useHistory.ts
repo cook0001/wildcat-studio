@@ -1,104 +1,114 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 
+interface HistoryState<T> {
+  past: T[];
+  present: T;
+  future: T[];
+}
+
 export function useHistory<T>(initialPresent: T, maxHistory = 50) {
-  const [past, setPast] = useState<T[]>([]);
-  const [present, setPresent] = useState<T>(initialPresent);
-  const [future, setFuture] = useState<T[]>([]);
+  const [history, setHistory] = useState<HistoryState<T>>({
+    past: [],
+    present: initialPresent,
+    future: [],
+  });
 
   const lastCommittedRef = useRef<T>(initialPresent);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const canUndo = past.length > 0;
-  const canRedo = future.length > 0;
-
-  const undo = useCallback(() => {
+  const clearPendingCommit = useCallback(() => {
     if (timerRef.current) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
-
-    setPast((currentPast) => {
-      if (currentPast.length === 0) return currentPast;
-      const previous = currentPast[currentPast.length - 1];
-      const newPast = currentPast.slice(0, currentPast.length - 1);
-
-      setPresent((currentPresent) => {
-        setFuture((currentFuture) => [currentPresent, ...currentFuture]);
-        lastCommittedRef.current = previous;
-        return previous;
-      });
-
-      return newPast;
-    });
   }, []);
 
-  const redo = useCallback(() => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
+  useEffect(() => clearPendingCommit, [clearPendingCommit]);
 
-    setFuture((currentFuture) => {
-      if (currentFuture.length === 0) return currentFuture;
-      const next = currentFuture[0];
-      const newFuture = currentFuture.slice(1);
-
-      setPresent((currentPresent) => {
-        setPast((currentPast) => [...currentPast, currentPresent].slice(-maxHistory));
-        lastCommittedRef.current = next;
-        return next;
-      });
-
-      return newFuture;
+  const undo = useCallback(() => {
+    clearPendingCommit();
+    setHistory((prev) => {
+      if (prev.past.length === 0) return prev;
+      const previous = prev.past[prev.past.length - 1];
+      lastCommittedRef.current = previous;
+      return {
+        past: prev.past.slice(0, -1),
+        present: previous,
+        future: [prev.present, ...prev.future].slice(0, maxHistory),
+      };
     });
-  }, [maxHistory]);
+  }, [clearPendingCommit, maxHistory]);
+
+  const redo = useCallback(() => {
+    clearPendingCommit();
+    setHistory((prev) => {
+      if (prev.future.length === 0) return prev;
+      const next = prev.future[0];
+      lastCommittedRef.current = next;
+      return {
+        past: [...prev.past, prev.present].slice(-maxHistory),
+        present: next,
+        future: prev.future.slice(1),
+      };
+    });
+  }, [clearPendingCommit, maxHistory]);
 
   const set = useCallback((newPresent: T, commitImmediately = false) => {
-    setPresent(newPresent);
+    clearPendingCommit();
 
     if (commitImmediately) {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
-      setPast((currentPast) => [...currentPast, lastCommittedRef.current].slice(-maxHistory));
-      setFuture([]);
+      const committedPrev = lastCommittedRef.current;
       lastCommittedRef.current = newPresent;
+      setHistory((prev) => ({
+        past: [...prev.past, committedPrev].slice(-maxHistory),
+        present: newPresent,
+        future: [],
+      }));
       return;
     }
 
-    // Debounce history point creation (350ms) so continuous slider scrubbing records 1 clean undo point
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-    }
+    setHistory((prev) => ({
+      ...prev,
+      present: newPresent,
+    }));
+
     timerRef.current = setTimeout(() => {
-      setPast((currentPast) => [...currentPast, lastCommittedRef.current].slice(-maxHistory));
-      setFuture([]);
+      const committedPrev = lastCommittedRef.current;
       lastCommittedRef.current = newPresent;
       timerRef.current = null;
+      setHistory((prev) => ({
+        past: [...prev.past, committedPrev].slice(-maxHistory),
+        present: newPresent,
+        future: [],
+      }));
     }, 350);
-  }, [maxHistory]);
+  }, [clearPendingCommit, maxHistory]);
 
-  // Global Keyboard Shortcuts (Cmd+Z, Cmd+Shift+Z, Ctrl+Z, Ctrl+Y)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const isCmdOrCtrl = e.metaKey || e.ctrlKey;
       if (!isCmdOrCtrl) return;
 
-      const activeTag = document.activeElement?.tagName.toLowerCase();
-      // If user is actively typing in a text input, let them use native text undo unless they press Cmd+Shift+Z or outside text
-      if (activeTag === 'input' && (document.activeElement as HTMLInputElement).type === 'text') {
+      const active = document.activeElement as HTMLElement | null;
+      const activeTag = active?.tagName.toLowerCase();
+      if (
+        activeTag === 'input' ||
+        activeTag === 'textarea' ||
+        activeTag === 'select' ||
+        active?.isContentEditable
+      ) {
         return;
       }
 
-      if (e.key.toLowerCase() === 'z') {
+      const key = e.key.toLowerCase();
+      if (key === 'z') {
         e.preventDefault();
         if (e.shiftKey) {
           redo();
         } else {
           undo();
         }
-      } else if (e.key.toLowerCase() === 'y') {
+      } else if (key === 'y') {
         e.preventDefault();
         redo();
       }
@@ -109,13 +119,13 @@ export function useHistory<T>(initialPresent: T, maxHistory = 50) {
   }, [undo, redo]);
 
   return {
-    state: present,
+    state: history.present,
     set,
     undo,
     redo,
-    canUndo,
-    canRedo,
-    pastCount: past.length,
-    futureCount: future.length,
+    canUndo: history.past.length > 0,
+    canRedo: history.future.length > 0,
+    pastCount: history.past.length,
+    futureCount: history.future.length,
   };
 }

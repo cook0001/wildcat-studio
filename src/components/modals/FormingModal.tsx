@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   CartridgeSpec, 
   CaseFormingResult 
@@ -15,6 +15,7 @@ import {
   compileTypstToPdf 
 } from '../../utils/fileExport';
 import { generateFormingTypst } from '../../utils/typstTemplates';
+import { escapeHtml } from '../../utils/cartridgeHelpers';
 import { CartridgePickerModal } from './CartridgePickerModal';
 import { 
   X, 
@@ -49,17 +50,23 @@ export const FormingModal: React.FC<FormingModalProps> = ({
     return { ...allPresets, ...customCartridges };
   }, [allPresets, customCartridges]);
 
-  // Initial donor: default to parent_case if present, else .308 Win, or first match
-  const [selectedDonorId, setSelectedDonorId] = useState<string>(() => {
-    if (activeCartridge.parent_case) {
+  const resolveDefaultDonorId = (spec: CartridgeSpec) => {
+    if (spec.parent_case) {
       const match = Object.values(allAvailable).find(
-        c => c.name.toLowerCase() === activeCartridge.parent_case?.toLowerCase() ||
-             c.id.toLowerCase() === activeCartridge.parent_case?.toLowerCase()
+        c => c.name.toLowerCase() === spec.parent_case?.toLowerCase() ||
+             c.id.toLowerCase() === spec.parent_case?.toLowerCase()
       );
       if (match) return match.id;
     }
-    return activeCartridge.id === '308_win' ? '30_06_springfield' : '308_win';
-  });
+    return spec.id === '308_win' ? '30_06_springfield' : '308_win';
+  };
+
+  // Initial donor: default to parent_case if present, else .308 Win, or first match
+  const [selectedDonorId, setSelectedDonorId] = useState<string>(() => resolveDefaultDonorId(activeCartridge));
+
+  useEffect(() => {
+    setSelectedDonorId(resolveDefaultDonorId(activeCartridge));
+  }, [activeCartridge.id, activeCartridge.parent_case]);
 
   const [fireformingMethod, setFireformingMethod] = useState<'mild_load' | 'cow_plug'>('mild_load');
   const [isPickerOpen, setIsPickerOpen] = useState<boolean>(false);
@@ -97,11 +104,13 @@ export const FormingModal: React.FC<FormingModalProps> = ({
       }
     }
 
+    const safeActiveName = escapeHtml(activeCartridge.name);
+    const safeDonorName = escapeHtml(donorCartridge.name);
     const printHtml = `<!DOCTYPE html>
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>Case Forming Protocol - ${activeCartridge.name}</title>
+    <title>Case Forming Protocol - ${safeActiveName}</title>
     <style>
       @page { size: letter portrait; margin: 0.45in; }
       * { box-sizing: border-box; }
@@ -183,32 +192,32 @@ export const FormingModal: React.FC<FormingModalProps> = ({
     <div class="header-bar">
       <div>
         <div class="header-sub">Wildcat Studio Case Forming Engine</div>
-        <h1 class="header-title">${activeCartridge.name} &bull; Case Forming & Fireforming Protocol</h1>
+        <h1 class="header-title">${safeActiveName} &bull; Case Forming &amp; Fireforming Protocol</h1>
       </div>
       <div class="header-date">
         DATE: ${new Date().toLocaleDateString()}<br/>
-        STANDARD: ${activeCartridge.standard.toUpperCase()}
+        STANDARD: ${escapeHtml(activeCartridge.standard.toUpperCase())}
       </div>
     </div>
 
     <div class="summary-banner">
       <div class="banner-donor">
-        <strong>Parent Donor Brass:</strong> ${donorCartridge.name} (${donorCartridge.category})
+        <strong>Parent Donor Brass:</strong> ${safeDonorName} (${escapeHtml(donorCartridge.category)})
         <span class="banner-arrow">&rarr;</span>
-        <strong>Target Wildcat:</strong> ${activeCartridge.name} (${activeCartridge.category})
+        <strong>Target Wildcat:</strong> ${safeActiveName} (${escapeHtml(activeCartridge.category)})
       </div>
       <div style="font-size: 11px; font-family: monospace; font-weight: 700; color: #0284c7;">
         WALL DISPLACEMENT: ${(Math.abs(activeCartridge.bullet_diameter - donorCartridge.bullet_diameter) * 25.4).toFixed(2)} mm
       </div>
     </div>
 
-    <div class="section-heading">Dimensional Comparison & Toolroom Delta</div>
+    <div class="section-heading">Dimensional Comparison &amp; Toolroom Delta</div>
     <table>
       <thead>
         <tr>
           <th>Dimension</th>
-          <th>Parent Donor (${donorCartridge.name})</th>
-          <th>Target Wildcat (${activeCartridge.name})</th>
+          <th>Parent Donor (${safeDonorName})</th>
+          <th>Target Wildcat (${safeActiveName})</th>
           <th>Displacement Delta (&Delta;)</th>
         </tr>
       </thead>
@@ -251,18 +260,18 @@ export const FormingModal: React.FC<FormingModalProps> = ({
       .map(
         (s, i) => `
       <div class="step-card">
-        <span class="step-num">Step ${i + 1}:</span> ${s}
+        <span class="step-num">Step ${i + 1}:</span> ${escapeHtml(s)}
       </div>
     `
       )
       .join('')}
 
-    <div class="section-heading">Donut Diagnostic & Neck Wall Thickness Analysis</div>
+    <div class="section-heading">Donut Diagnostic &amp; Neck Wall Thickness Analysis</div>
     <div class="risk-box">
       <div style="font-weight: 800; font-size: 12px; margin-bottom: 4px; color: ${formingResult.requires_neck_turning ? '#b45309' : '#15803d'};">
         INTERNAL DONUT RISK: ${formingResult.doughnut_risk.toUpperCase()} &bull; OUTSIDE NECK TURNING: ${formingResult.requires_neck_turning ? 'REQUIRED' : 'NOT REQUIRED'}
       </div>
-      <div>${formingResult.doughnut_reason}</div>
+      <div>${escapeHtml(formingResult.doughnut_reason)}</div>
     </div>
 
     <div class="footer">
@@ -745,7 +754,7 @@ export const FormingModal: React.FC<FormingModalProps> = ({
                 }}
               >
                 <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--cad-cyan, #00f0ff)', marginBottom: '4px' }}>
-                  Method 1: Mild Live Fire-Forming Load {fireformingMethod === 'mild_load' ? '✓' : ''}
+                  Method 1: Mild Live Fire-Forming Load {fireformingMethod === 'mild_load' ? '(Selected)' : ''}
                 </div>
                 <p style={{ fontSize: '11px', color: 'var(--text-secondary, #94a3b8)', margin: 0, lineHeight: 1.5 }}>
                   Load a lightweight bullet seated hard into the rifling lands (0.015" jam) over a starting charge (~80% of max load). The jam holds the cartridge head firmly against the bolt face while shoulder blows out square.
@@ -764,7 +773,7 @@ export const FormingModal: React.FC<FormingModalProps> = ({
                 }}
               >
                 <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--cad-copper, #f0883e)', marginBottom: '4px' }}>
-                  Method 2: Cream of Wheat (COW) Inert Plug {fireformingMethod === 'cow_plug' ? '✓' : ''}
+                  Method 2: Cream of Wheat (COW) Inert Plug {fireformingMethod === 'cow_plug' ? '(Selected)' : ''}
                 </div>
                 <p style={{ fontSize: '11px', color: 'var(--text-secondary, #94a3b8)', margin: 0, lineHeight: 1.5 }}>
                   Use 10–12 gr of fast-burning pistol/shotgun powder (Bullseye or Unique), fill remainder of case to neck with Cream of Wheat or cornmeal, and seal case mouth with candle wax or soap plug. Fire straight up into safe backstop.

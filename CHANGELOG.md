@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-11-20
+
+### Fixed
+- **Backend Geometry, Exporters & Capabilities (`src-tauri/`)**:
+  - Corrected operator precedence in [`reamer.rs`](src-tauri/src/geometry/reamer.rs) rim clearance rounding and [`vol_interchange.rs`](src-tauri/src/formats/vol_interchange.rs) extractor groove reconstruction.
+  - Added `RimType::Rimfire` support across Rust and TypeScript so rimfire cases are contoured without extractor grooves and headspace on rim thickness.
+  - Fixed barrel rechamber setback solver (`setback.rs`, `volumetrics.ts`) to omit brass extractor-groove dips, enforce bore compatibility, and apply proper breech setback offsets.
+  - Corrected DXF layer table count and full symmetric chamber/freebore/leade contours in [`dxf.rs`](src-tauri/src/formats/dxf.rs).
+  - Enabled desktop file write/read permissions (`fs:allow-write-text-file`, `fs:allow-write-file`, `fs:allow-read-text-file`) in `src-tauri/capabilities/default.json` and deduplicated OS temp viewer printing in `lib.rs`.
+- **Frontend Drafting, Exports & Cartridge Database (`src/`)**:
+  - Replaced stubbed DXF, QuickLOAD `.vol`, and STL menu exports in `App.tsx` with full generators (`cartridgeHelpers.ts`) and valid binary STL facet normals.
+  - Normalized 126 mismatched cartridge category strings and removed 12 duplicate entries across `src/data/cartridges/` (`396` unique presets across 11 categories), plus fixed `.44 Henry Rimfire` neck dimensions.
+  - Fixed `BlueprintCanvas.tsx` zoom/pan resets on edits, full snapshot restoration on dimension Cancel, reversed bottom SVG contours, `little_boy_ordnance` cutaway condition, metric datum formatting, `ThreeViewport.tsx` material disposal & pause/delta-spin loop, `ParametricControls.tsx` Section 4 collapse toggle & number typing drafts, `useHistory.ts` atomic state transitions, Typst template `context` footer & escaping, HTML print escaping, MOA/MRAD trajectory math, and missing CSS keyframes / `-webkit-backdrop-filter` prefixes.
+- **CI Workflows (`audit.yml`, `release.yml`)**:
+  - Fixed `rustsec/audit-check@v2.0.0` in `audit.yml` (`working-directory: src-tauri`).
+  - Changed `release.yml` to manual `workflow_dispatch` only with resolved `v<version>` default tags.
+
+### Added
+- **Built-in Tauri Self-Signing, Auto-Updater & Multi-Arch Releases**:
+  - Enabled macOS ad-hoc self-signing (`signingIdentity: "-"`) and Windows passive updater mode in `tauri.conf.json` pointing to `cook0001/wildcat-studio`.
+  - Added Rust `restart_app` (`app.request_restart()`) command and wired startup `Update` state handoff into `UpdateModal.tsx`.
+  - Added **Windows ARM64** (`windows-11-arm`) and **Linux ARM64** (`ubuntu-24.04-arm`) builds plus deterministic post-matrix `latest.json` generation (`scripts/generate-updater-manifest.mjs`).
+  - Transitioned public repository licensing to the **MIT License**.
+
 ## [1.1.0] - 2026-09-20
 
 ### Added

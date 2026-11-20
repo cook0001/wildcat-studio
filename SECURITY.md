@@ -6,8 +6,8 @@ Wildcat Studio is actively maintained. Security updates, cryptographic patches, 
 
 | Version | Supported | Notes |
 | :--- | :--- | :--- |
-| **1.0.x** | :white_check_mark: Yes | Current production release |
-| **< 1.0.0** | :x: No | Beta / Pre-release builds (unsupported) |
+| **1.1.x** | Yes | Current release |
+| **< 1.1.0** | No | Superseded releases (unsupported) |
 
 ---
 
@@ -42,16 +42,16 @@ We take the security and mathematical integrity of Wildcat Studio seriously. If 
 
 Wildcat Studio operates strictly as an offline, zero-telemetry desktop application. The following areas are strictly monitored:
 
-- **Mathematical & Telemetry Safety**: Integrity of the 1000-slice Simpson composite volumetrics solver, chamber reamer tolerance calculations, and live clearance callouts.
-- **Export Sanitization**: Safe parsing and generation of AutoCAD DXF vectors, QuickDESIGN QDF, QuickLOAD VOL, and 3D STL meshes to prevent path traversal or malicious injection.
-- **Binary Integrity**: Native Mach-O, PE, and ELF binaries built in cleanroom GitHub Actions virtual environments with dead-code elimination, symbol stripping, and Terser obfuscation.
-- **Data Privacy**: All custom cartridge records and screen calibration DPI data reside exclusively in local client storage; no data is ever transmitted externally.
+- **Mathematical & Telemetry Accuracy**: Consistency of the 1,000-slice Simpson composite volumetrics solver, chamber reamer tolerance calculations, and live clearance callouts.
+- **Export Sanitization**: Escaping and safe generation of printable HTML/Typst templates, AutoCAD DXF vectors, QuickLOAD VOL, and binary STL meshes.
+- **Binary Integrity**: Native Mach-O, PE, and ELF binaries built in GitHub Actions with `opt-level = 3`, `lto = true`, and symbol stripping.
+- **Data Privacy**: All custom cartridge records and screen calibration DPI data reside in local client storage without external telemetry.
 
 ---
 
 ## Cryptographic Binary Verification
 
-To verify that your downloaded binary package has not been altered or tampered with in transit, always compare its SHA-256 hash against the official `SHA256SUMS.txt` published on the [Releases](https://github.com/cook0001/wildcat-studio/releases) page.
+To verify that a downloaded installer package matches the release build, compare its SHA-256 hash against the `SHA256SUMS.txt` asset on the [Releases](https://github.com/cook0001/wildcat-studio/releases) page.
 
 ### Verification Commands:
 
@@ -61,16 +61,16 @@ To verify that your downloaded binary package has not been altered or tampered w
 shasum -a 256 -c SHA256SUMS.txt
 
 # Or check an individual package
-shasum -a 256 Wildcat-Studio-v1.0.0-universal.dmg
+shasum -a 256 Wildcat.Studio_1.1.1_universal.dmg
 ```
 
 #### Windows (PowerShell)
 ```powershell
 # Check hash
-Get-FileHash -Algorithm SHA256 .\Wildcat.Studio_1.0.0_x64-setup.exe
+Get-FileHash -Algorithm SHA256 .\Wildcat.Studio_1.1.1_x64-setup.exe
 
 # Or using certutil
-certutil -hashfile .\Wildcat.Studio_1.0.0_x64-setup.exe SHA256
+certutil -hashfile .\Wildcat.Studio_1.1.1_x64-setup.exe SHA256
 ```
 
 ---

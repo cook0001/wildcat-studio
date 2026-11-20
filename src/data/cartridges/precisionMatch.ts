@@ -763,7 +763,7 @@ export const PRECISION_MATCH_CARTRIDGES: Record<string, CartridgeSpec> = {
   "6mm_brx": {
       "id": "6mm_brx",
       "name": "6mm BRX (6mm BR Improved 30°)",
-      "category": "Precision Rifle & Benchrest",
+      "category": "Precision Match, PRS & Benchrest",
       "standard": "Wildcat",
       "units": "imperial",
       "rim_type": "rimless",
@@ -796,7 +796,7 @@ export const PRECISION_MATCH_CARTRIDGES: Record<string, CartridgeSpec> = {
   "65_super_lr": {
       "id": "65_super_lr",
       "name": "6.5 Super LR (Super Long Range)",
-      "category": "Precision Rifle & Benchrest",
+      "category": "Precision Match, PRS & Benchrest",
       "standard": "Wildcat",
       "units": "imperial",
       "rim_type": "rimless",
@@ -829,7 +829,7 @@ export const PRECISION_MATCH_CARTRIDGES: Record<string, CartridgeSpec> = {
   "308_palma": {
       "id": "308_palma",
       "name": ".308 Palma Match (Small Primer .308)",
-      "category": "Precision Rifle & Benchrest",
+      "category": "Precision Match, PRS & Benchrest",
       "standard": "Wildcat",
       "units": "imperial",
       "rim_type": "rimless",
@@ -862,7 +862,7 @@ export const PRECISION_MATCH_CARTRIDGES: Record<string, CartridgeSpec> = {
   "338_enabelr": {
       "id": "338_enabelr",
       "name": ".338 EnABELR (Extreme Long Range)",
-      "category": "Precision Rifle & Benchrest",
+      "category": "Precision Match, PRS & Benchrest",
       "standard": "Wildcat",
       "units": "imperial",
       "rim_type": "rimless",
@@ -895,7 +895,7 @@ export const PRECISION_MATCH_CARTRIDGES: Record<string, CartridgeSpec> = {
   "5mm_35_smc": {
       "id": "5mm_35_smc",
       "name": "5mm/35 SMc (Superior Machining & Cartridge)",
-      "category": "Precision Rifle & Benchrest",
+      "category": "Precision Match, PRS & Benchrest",
       "standard": "Wildcat",
       "units": "imperial",
       "rim_type": "rimless",

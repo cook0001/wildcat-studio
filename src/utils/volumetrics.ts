@@ -24,68 +24,82 @@ export function isStraightWall(spec: CartridgeSpec): boolean {
   );
 }
 
+export function effectiveShoulderLength(spec: CartridgeSpec): number {
+  const r_shoulder_start = spec.shoulder_start_diameter / 2.0;
+  const r_neck_base = (spec.neck_diameter_base || spec.neck_diameter_mouth) / 2.0;
+  const delta_r_shoulder = r_shoulder_start - r_neck_base;
+  if (spec.shoulder_angle > 0.5 && delta_r_shoulder > 0.001) {
+    const tanAngle = Math.tan((spec.shoulder_angle * Math.PI) / 180);
+    if (tanAngle > 0.001) {
+      return delta_r_shoulder / tanAngle;
+    }
+  }
+  return spec.shoulder_length;
+}
+
+function lerpTaper(z: number, z0: number, z1: number, r0: number, r1: number): number {
+  const fraction = Math.min(1.0, Math.max(0.0, (z - z0) / Math.max(0.001, z1 - z0)));
+  return r0 + (r1 - r0) * fraction;
+}
+
+function getTaperedBodyRadiusAt(spec: CartridgeSpec, z: number, start_z: number): number {
+  const r_base = spec.base_diameter / 2.0;
+  const r_shoulder_start = spec.shoulder_start_diameter / 2.0;
+  const r_neck_base = (spec.neck_diameter_base || spec.neck_diameter_mouth) / 2.0;
+  const r_neck_mouth = spec.neck_diameter_mouth / 2.0;
+  const z_shoulder_start = spec.body_length;
+  const z_shoulder_end = spec.body_length + effectiveShoulderLength(spec);
+  const z_mouth = spec.case_length;
+
+  if (isStraightWall(spec)) {
+    return z <= z_mouth ? lerpTaper(z, start_z, z_mouth, r_base, r_neck_mouth) : r_neck_mouth;
+  }
+  if (z <= z_shoulder_start) {
+    return lerpTaper(z, start_z, z_shoulder_start, r_base, r_shoulder_start);
+  }
+  if (z <= z_shoulder_end) {
+    return lerpTaper(z, z_shoulder_start, z_shoulder_end, r_shoulder_start, r_neck_base);
+  }
+  if (z <= z_mouth) {
+    return lerpTaper(z, z_shoulder_end, z_mouth, r_neck_base, r_neck_mouth);
+  }
+  return r_neck_mouth;
+}
+
 export function getOuterRadiusAt(spec: CartridgeSpec, z: number): number {
   const r_rim = spec.rim_diameter / 2.0;
   const t_rim = spec.rim_thickness;
   const w_ext = spec.extractor_width;
   const r_ext = spec.extractor_diameter / 2.0;
   const z_body_start = t_rim + w_ext;
-  const r_base = spec.base_diameter / 2.0;
-
-  const z_shoulder_start = spec.body_length;
-  const r_shoulder_start = spec.shoulder_start_diameter / 2.0;
-
-  const r_neck_base = (spec.neck_diameter_base || spec.neck_diameter_mouth) / 2.0;
-  const delta_r_shoulder = r_shoulder_start - r_neck_base;
-
-  // Derive dynamic shoulder length directly from shoulder_angle if active
-  let effective_shoulder_len = spec.shoulder_length;
-  if (spec.shoulder_angle > 0.5 && delta_r_shoulder > 0.001) {
-    const rad = (spec.shoulder_angle * Math.PI) / 180;
-    const tanAngle = Math.tan(rad);
-    if (tanAngle > 0.001) {
-      effective_shoulder_len = delta_r_shoulder / tanAngle;
-    }
-  }
-
-  const z_shoulder_end = spec.body_length + effective_shoulder_len;
-
-  const z_mouth = spec.case_length;
-  const r_neck_mouth = spec.neck_diameter_mouth / 2.0;
+  const hasExtractorGroove = spec.rim_type !== 'rimmed' && spec.rim_type !== 'rimfire';
 
   if (z <= t_rim) {
     return r_rim;
-  } else if (spec.rim_type !== 'rimmed' && z <= z_body_start) {
+  }
+  if (hasExtractorGroove && z <= z_body_start) {
     return r_ext;
-  } else if (spec.rim_type === 'belted' && spec.belt_diameter && z <= z_body_start + (spec.belt_width || 0.220)) {
+  }
+  if (spec.rim_type === 'belted' && spec.belt_diameter && z <= z_body_start + (spec.belt_width || 0.220)) {
     return spec.belt_diameter / 2.0;
   }
 
-  // Straight-wall / No-shoulder case: straight continuous taper from base to mouth
-  if (isStraightWall(spec)) {
-    const start_z = spec.rim_type === 'rimmed' ? t_rim : z_body_start;
-    if (z <= z_mouth) {
-      const fraction = (z - start_z) / Math.max(0.001, z_mouth - start_z);
-      return r_base + (r_neck_mouth - r_base) * Math.min(1.0, Math.max(0.0, fraction));
-    } else {
-      return r_neck_mouth;
-    }
-  }
+  return getTaperedBodyRadiusAt(spec, z, hasExtractorGroove ? z_body_start : t_rim);
+}
 
-  // Standard bottleneck shouldered case
-  if (z <= z_shoulder_start) {
-    const start_z = spec.rim_type === 'rimmed' ? t_rim : z_body_start;
-    const fraction = (z - start_z) / Math.max(0.001, z_shoulder_start - start_z);
-    return r_base + (r_shoulder_start - r_base) * Math.min(1.0, Math.max(0.0, fraction));
-  } else if (z <= z_shoulder_end) {
-    const fraction = (z - z_shoulder_start) / Math.max(0.001, z_shoulder_end - z_shoulder_start);
-    return r_shoulder_start + (r_neck_base - r_shoulder_start) * Math.min(1.0, Math.max(0.0, fraction));
-  } else if (z <= z_mouth) {
-    const fraction = (z - z_shoulder_end) / Math.max(0.001, z_mouth - z_shoulder_end);
-    return r_neck_base + (r_neck_mouth - r_neck_base) * Math.min(1.0, Math.max(0.0, fraction));
-  } else {
-    return r_neck_mouth;
+export function getChamberBodyRadiusAt(spec: CartridgeSpec, z: number): number {
+  if (z > spec.case_length) {
+    return spec.bullet_diameter / 2.0;
   }
+  const t_rim = spec.rim_thickness;
+  if ((spec.rim_type === 'rimmed' || spec.rim_type === 'rimfire' || spec.rim_type === 'semi_rimmed') && z <= t_rim) {
+    return spec.rim_diameter / 2.0;
+  }
+  if (spec.rim_type === 'belted' && spec.belt_diameter && z <= t_rim + spec.extractor_width + (spec.belt_width || 0.220)) {
+    return spec.belt_diameter / 2.0;
+  }
+  const start_z = (spec.rim_type === 'rimmed' || spec.rim_type === 'rimfire') ? t_rim : t_rim + spec.extractor_width;
+  return getTaperedBodyRadiusAt(spec, Math.max(z, start_z), start_z);
 }
 
 export function getInnerRadiusAt(spec: CartridgeSpec, z: number): number {
@@ -122,7 +136,7 @@ export function calculateVolumetricsFrontend(spec: CartridgeSpec): VolumetricRes
     };
   }
 
-  const n = 500;
+  const n = 1000;
   const dz = (z_end - z_start) / n;
   let sum_area = 0;
 
@@ -196,11 +210,19 @@ export function analyzeSetbackFrontend(oldSpec: CartridgeSpec, newSpec: Cartridg
   const steps = 150;
   const zMax = Math.max(oldSpec.case_length, newSpec.case_length);
   const dz = zMax / steps;
+  const boreCompatible = newSpec.bullet_diameter >= oldSpec.bullet_diameter - 0.002;
+
+  if (!boreCompatible) {
+    canClean = false;
+    interferences.push(
+      `Bore mismatch: Existing bullet ${oldSpec.bullet_diameter.toFixed(4)}" > New ${newSpec.bullet_diameter.toFixed(4)}" (barrel replacement required)`
+    );
+  }
 
   for (let i = 0; i <= steps; i++) {
     const z = i * dz;
-    const rOld = getOuterRadiusAt(oldSpec, z);
-    const rNew = getOuterRadiusAt(newSpec, z);
+    const rOld = getChamberBodyRadiusAt(oldSpec, z);
+    const rNew = getChamberBodyRadiusAt(newSpec, z);
 
     if (rNew < rOld - 0.0002) {
       canClean = false;
@@ -214,15 +236,17 @@ export function analyzeSetbackFrontend(oldSpec: CartridgeSpec, newSpec: Cartridg
   }
 
   let requiredSetback = 0;
-  if (!canClean) {
+  if (!canClean && boreCompatible) {
     for (let test = 1; test <= 150; test++) {
       const offset = test * 0.010;
       let cleanWithOffset = true;
 
       for (let i = 0; i <= steps; i++) {
-        const z = i * dz;
-        const rOld = getOuterRadiusAt(oldSpec, z);
-        const rNew = getOuterRadiusAt(newSpec, z + offset);
+        const zNew = i * dz;
+        const zOld = zNew + offset;
+        if (zOld > oldSpec.case_length) break;
+        const rOld = getChamberBodyRadiusAt(oldSpec, zOld);
+        const rNew = getChamberBodyRadiusAt(newSpec, zNew);
 
         if (rNew < rOld - 0.0002) {
           cleanWithOffset = false;
@@ -259,7 +283,7 @@ export function getChamberRadiusAt(spec: CartridgeSpec, z: number): number {
   const r_bore = reamer.pilot_diameter / 2;
 
   const z_sh_start = spec.body_length;
-  const z_sh_end = spec.body_length + spec.shoulder_length;
+  const z_sh_end = spec.body_length + effectiveShoulderLength(spec);
   const z_neck_end = reamer.chamber_length;
   const z_fb_end = z_neck_end + reamer.freebore_length;
 
@@ -332,7 +356,7 @@ export function calculateDatumHeadspace(spec: CartridgeSpec): { datum_diameter: 
   }
 
   const frac = (shStart - datumDia) / Math.max(0.001, shStart - shEnd);
-  const datumLen = spec.body_length + spec.shoulder_length * Math.min(1.0, Math.max(0.0, frac));
+  const datumLen = spec.body_length + effectiveShoulderLength(spec) * Math.min(1.0, Math.max(0.0, frac));
 
   return {
     datum_diameter: Math.round(datumDia * 10000) / 10000,
@@ -344,7 +368,7 @@ export function calculateDatumHeadspace(spec: CartridgeSpec): { datum_diameter: 
  * Calculates precision GO, NO-GO, and FIELD headspace gauge dimensions.
  */
 export function calculateHeadspaceGauges(spec: CartridgeSpec): HeadspaceGaugeSpec {
-  if (spec.rim_type === 'rimmed') {
+  if (spec.rim_type === 'rimmed' || spec.rim_type === 'rimfire') {
     const nominal = spec.rim_thickness;
     return {
       type: 'rimmed',
@@ -397,15 +421,24 @@ export function calculateHeadspaceGauges(spec: CartridgeSpec): HeadspaceGaugeSpe
 }
 
 /**
- * Computes C.I.P. Delta L safety margin.
+ * Computes C.I.P. Delta L safety margin from actual headspace geometry.
  */
 export function calculateCIPDeltaL(spec: CartridgeSpec): { deltaL_mm: number; deltaL_in: number; isSafe: boolean; note: string } {
-  const datum = calculateDatumHeadspace(spec);
   const chamber = generateReamerSpecFrontend(spec);
-  // In C.I.P., Delta L represents the clearance between chamber datum and cartridge datum
-  const deltaL_in = Math.max(0.0015, (chamber.chamber_length - spec.case_length) * 0.35 + (datum.datum_length > 0 ? 0.001 : 0));
-  const deltaL_mm = deltaL_in * 25.4;
+  let deltaL_in: number;
 
+  if (spec.rim_type === 'rimmed' || spec.rim_type === 'rimfire') {
+    deltaL_in = Math.max(0, chamber.chamber_rim_depth - spec.rim_thickness);
+  } else if (spec.rim_type === 'belted' || isStraightWall(spec)) {
+    deltaL_in = Math.max(0, chamber.chamber_length - spec.case_length);
+  } else {
+    const radialShoulderClearance = Math.max(0, (chamber.chamber_shoulder_dia - spec.shoulder_start_diameter) / 2);
+    const tanAngle = Math.max(0.05, Math.tan((spec.shoulder_angle * Math.PI) / 180));
+    const neckClearance = chamber.chamber_neck_dia - spec.neck_diameter_mouth;
+    deltaL_in = neckClearance >= 0.001 ? radialShoulderClearance / tanAngle : 0;
+  }
+
+  const deltaL_mm = deltaL_in * 25.4;
   const isSafe = deltaL_mm >= 0.05;
   return {
     deltaL_mm: Math.round(deltaL_mm * 1000) / 1000,
@@ -413,7 +446,7 @@ export function calculateCIPDeltaL(spec: CartridgeSpec): { deltaL_mm: number; de
     isSafe,
     note: isSafe
       ? 'Complies with C.I.P. Safety Rule (ΔL >= 0.05 mm)'
-      : 'Below recommended C.I.P. safety clearance margin',
+      : 'Below recommended C.I.P. safety clearance margin (ΔL < 0.05 mm)',
   };
 }
 
@@ -949,8 +982,8 @@ export function exportRangeStudioBallistics(spec: CartridgeSpec): string {
     const zero100Tof = 300 / ((estVelocity + (estVelocity - 55)) / 2);
     const zero100Drop = 0.5 * 386.4 * (zero100Tof * zero100Tof) - 1.5;
     const dropInches = rangeYds === 100 ? 0.0 : Math.round((rawDropInches - zero100Drop * (rangeYds / 100)) * 10) / 10;
-    const dropMoa = Math.round((dropInches / (rangeYds * 1.047)) * 10) / 10;
-    const dropMrad = Math.round((dropInches / (rangeYds * 0.036)) * 10) / 100;
+    const dropMoa = Math.round((dropInches / ((rangeYds / 100) * 1.047)) * 10) / 10;
+    const dropMrad = Math.round((dropInches / (rangeYds * 0.036)) * 10) / 10;
     const energy = Math.round((spec.bullet_weight_grains * velFps * velFps) / 450240);
     const windDrift = Math.round((((tofSeconds * 10) / Math.max(0.2, bcG1)) * 1.2) * 10) / 10;
 

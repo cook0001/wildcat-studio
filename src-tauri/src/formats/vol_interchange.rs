@@ -22,27 +22,52 @@ pub fn export_to_quickload_vol_line(spec: &CartridgeSpec) -> String {
     )
 }
 
+fn split_csv_fields(line: &str) -> Vec<String> {
+    let mut fields = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '"' => {
+                if in_quotes && chars.peek() == Some(&'"') {
+                    chars.next();
+                    current.push('"');
+                } else {
+                    in_quotes = !in_quotes;
+                }
+            }
+            ',' if !in_quotes => {
+                fields.push(current.trim().to_string());
+                current.clear();
+            }
+            _ => current.push(c),
+        }
+    }
+    fields.push(current.trim().to_string());
+    fields
+}
+
 pub fn parse_quickload_vol_line(line: &str) -> Option<CartridgeSpec> {
     let clean = line.trim();
     if clean.is_empty() || clean.starts_with('#') {
         return None;
     }
 
-    let fields: Vec<&str> = clean
-        .split("\",\"")
-        .map(|f| f.trim_matches('"'))
-        .collect();
-
+    let fields = split_csv_fields(clean);
     if fields.len() < 9 {
         return None;
     }
 
-    let name = fields[0].to_string();
+    let name = fields[0].clone();
+    if name.is_empty() {
+        return None;
+    }
     let _h2o_grains: f64 = fields[1].parse().unwrap_or(50.0);
     let case_length: f64 = fields[2].parse().unwrap_or(2.0);
     let bullet_dia: f64 = fields[3].parse().unwrap_or(0.308);
     let pressure: f64 = fields[6].parse().unwrap_or(4000.0);
-    let standard = fields[7].to_string();
+    let standard = fields[7].clone();
     let coal: f64 = fields[8].parse().unwrap_or(case_length + 0.7);
 
     // Reconstruct proportional parametric case based on standard caliber proportions
@@ -63,7 +88,7 @@ pub fn parse_quickload_vol_line(line: &str) -> Option<CartridgeSpec> {
         rim_type: RimType::Rimless,
         rim_diameter: (rim_dia * 1000.0).round() / 1000.0,
         rim_thickness: 0.054,
-        extractor_diameter: (rim_dia - 0.070 * 1000.0).round() / 1000.0,
+        extractor_diameter: ((rim_dia - 0.070) * 1000.0).round() / 1000.0,
         extractor_width: 0.039,
         extractor_angle: 45.0,
         belt_diameter: None,
@@ -138,6 +163,11 @@ mod tests {
         assert!(line.contains("\"2.015\""));
         assert!(line.contains("\"0.308\""));
         assert!(line.contains("\"4150\""));
+
+        let parsed = parse_quickload_vol_line(&line).expect("roundtrip parse should succeed");
+        assert_eq!(parsed.name, ".308 Winchester");
+        assert!((parsed.case_length - 2.015).abs() < 1e-3);
+        assert!((parsed.bullet_diameter - 0.308).abs() < 1e-3);
     }
 }
 

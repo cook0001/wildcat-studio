@@ -9,8 +9,13 @@ import {
   calculateVolumetrics, 
   calculateReamerSpecs,
   calculateDatumHeadspace,
-  calculateCIPDeltaL
+  calculateCIPDeltaL,
+  effectiveShoulderLength
 } from '../utils/volumetrics';
+import {
+  buildClosedSvgContour,
+  getActiveBulletPreset
+} from '../utils/cartridgeHelpers';
 import { 
   CALIBER_PRESETS, 
   BULLET_OPTIONS, 
@@ -91,7 +96,9 @@ interface EditingDimState {
   label: string;
   symbol: string;
   initialValInches: number;
+  initialSnapshot: CartridgeSpec;
   displayVal: number;
+  draftValue?: string;
   isAngle?: boolean;
   svgX: number;
   svgY: number;
@@ -253,9 +260,23 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
     { id: 'dual_envelope', label: 'Dual Envelope (MMC + LMC)', short: 'Dual Envelope', desc: 'Simultaneous Max Cartridge & Min Chamber Tolerance Lines' },
   ];
 
+  const getReamerClearanceForKey = (key: keyof CartridgeSpec, type: 'diameter' | 'length'): number => {
+    switch (key) {
+      case 'rim_diameter': return 0.0050;
+      case 'rim_thickness': return 0.0030;
+      case 'base_diameter':
+      case 'shoulder_start_diameter': return 0.0020;
+      case 'neck_diameter_base':
+      case 'neck_diameter_mouth': return 0.0030;
+      case 'bullet_diameter': return 0.0005;
+      case 'case_length': return 0.0150;
+      default: return type === 'diameter' ? 0.0020 : 0.0050;
+    }
+  };
+
   // Helper to format dimension badge with active tolerance and drafting standard
   const getBadgeText = (
-    _key: keyof CartridgeSpec,
+    key: keyof CartridgeSpec,
     nominalVal: number,
     cipSymbol: string,
     saamiSymbol: string,
@@ -271,17 +292,14 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
     if (activeTolerance === 'cartridge_max') {
       return `${sym} (MMC): ${fmt(nominalVal)}`;
     }
+    const add = getReamerClearanceForKey(key, type);
     if (activeTolerance === 'chamber_min') {
-      const add = type === 'diameter' ? 0.0025 : 0.0050;
       return `${sym} (LMC): ${fmt(nominalVal + add)}`;
     }
     if (activeTolerance === 'dual_envelope') {
-      const add = type === 'diameter' ? 0.0025 : 0.0050;
       return `${sym}: ${fmt(nominalVal)} / Cham ${fmt(nominalVal + add)} [Δ +${fmt(add, 4)}]`;
     }
-    // Clearance Δ
-    const clr = type === 'diameter' ? 0.0025 : 0.0050;
-    return `${sym} (Δ): +${fmt(clr, 4)}`;
+    return `${sym} (Δ): +${fmt(add, 4)}`;
   };
 
   const handleSetDrawingMode = (newMode: DrawingMode) => {
@@ -528,12 +546,15 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
     setPan({ x: targetPanX, y: targetPanY });
   }, [cartridge, ghostCartridge, rotation, originX, centerY]);
 
-  // Automatically fit cartridge when selected or changed (unless 1:1 true scale mode is active)
+  const fitToViewRef = useRef(handleFitToView);
+  fitToViewRef.current = handleFitToView;
+
+  // Automatically fit cartridge only when switching preset/scale/orientation (not during slider/popover edits)
   useEffect(() => {
     if (!isOneToOne) {
-      handleFitToView();
+      fitToViewRef.current();
     }
-  }, [cartridge.id, isOneToOne, rotation, handleFitToView]);
+  }, [cartridge.id, isOneToOne, rotation]);
 
   // Window resize, global 'F' (fit to screen) and 'R' (rotate 90°) listeners
   useEffect(() => {
@@ -633,47 +654,54 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
     setPan({ x: 0, y: 0 });
   };
 
-  // Outer profile path
+  // Outer profile points and open/closed SVG paths
   const steps = 100;
   const dz = cartridge.case_length / steps;
-  let outerTopPath = `M ${originX} ${centerY}`;
-  let outerBottomPath = `M ${originX} ${centerY}`;
-
-  const rRim = getOuterRadiusAt(cartridge, 0) * scale;
-  outerTopPath += ` L ${originX} ${centerY - rRim}`;
-  outerBottomPath += ` L ${originX} ${centerY + rRim}`;
-
+  const outerPts: [number, number][] = [];
   for (let i = 0; i <= steps; i++) {
     const z = i * dz;
-    const r = getOuterRadiusAt(cartridge, z) * scale;
-    const px = originX + z * scale;
-    outerTopPath += ` L ${px} ${centerY - r}`;
-    outerBottomPath += ` L ${px} ${centerY + r}`;
+    outerPts.push([originX + z * scale, getOuterRadiusAt(cartridge, z) * scale]);
   }
+  const rRim = getOuterRadiusAt(cartridge, 0) * scale;
+  const outerTopPath =
+    `M ${originX} ${centerY} L ${originX} ${centerY - rRim}` +
+    outerPts.map(([px, r]) => ` L ${px} ${centerY - r}`).join('');
+  const outerBottomPath =
+    `M ${originX} ${centerY} L ${originX} ${centerY + rRim}` +
+    outerPts.map(([px, r]) => ` L ${px} ${centerY + r}`).join('');
+  const outerClosedPath = buildClosedSvgContour(
+    outerPts,
+    (px, signedR) => `${px} ${centerY + signedR}`
+  );
+  const outerCutawayClosedPath =
+    outerTopPath +
+    ` L ${originX + cartridge.case_length * scale} ${centerY - (cartridge.neck_diameter_mouth / 2 - cartridge.neck_wall_thickness) * scale}` +
+    ` L ${originX + cartridge.case_length * scale} ${centerY + (cartridge.neck_diameter_mouth / 2 - cartridge.neck_wall_thickness) * scale}` +
+    [...outerPts].reverse().map(([px, r]) => ` L ${px} ${centerY + r}`).join('') +
+    ` L ${originX} ${centerY + rRim} Z`;
 
   // Mouth edge
   const zMouth = originX + cartridge.case_length * scale;
-  const rMouth = getOuterRadiusAt(cartridge, cartridge.case_length) * scale;
-  const rInnerMouth = (cartridge.neck_diameter_mouth / 2 - cartridge.neck_wall_thickness) * scale;
 
   // Inner cavity path for cutaway, half-section, and wireframe
   let innerTopPath = '';
   let innerBottomPath = '';
+  let innerClosedPath = '';
   const needsInnerPaths = activeDrawingMode === 'cutaway' || activeDrawingMode === 'half_section' || activeDrawingMode === 'wireframe';
   if (needsInnerPaths) {
-    const zWeb = originX + cartridge.web_thickness * scale;
-    const rWeb = getInnerRadiusAt(cartridge, cartridge.web_thickness) * scale;
-
-    innerTopPath = `M ${zWeb} ${centerY - rWeb}`;
-    innerBottomPath = `M ${zWeb} ${centerY + rWeb}`;
-
+    const innerPts: [number, number][] = [];
     for (let i = 0; i <= steps; i++) {
       const z = cartridge.web_thickness + (i / steps) * (cartridge.case_length - cartridge.web_thickness);
-      const r = getInnerRadiusAt(cartridge, z) * scale;
-      const px = originX + z * scale;
-      innerTopPath += ` L ${px} ${centerY - r}`;
-      innerBottomPath += ` L ${px} ${centerY + r}`;
+      innerPts.push([originX + z * scale, getInnerRadiusAt(cartridge, z) * scale]);
     }
+    const zWeb = originX + cartridge.web_thickness * scale;
+    const rWeb = getInnerRadiusAt(cartridge, cartridge.web_thickness) * scale;
+    innerTopPath = `M ${zWeb} ${centerY - rWeb}` + innerPts.map(([px, r]) => ` L ${px} ${centerY - r}`).join('');
+    innerBottomPath = `M ${zWeb} ${centerY + rWeb}` + innerPts.map(([px, r]) => ` L ${px} ${centerY + r}`).join('');
+    innerClosedPath = buildClosedSvgContour(
+      innerPts,
+      (px, signedR) => `${px} ${centerY + signedR}`
+    );
   }
 
   // Chamber reamer cut profile (for chamber_fit and chamber overlay)
@@ -706,10 +734,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
   const rBullet = (cartridge.bullet_diameter / 2) * scale;
 
   // Key coordinate milestones in pixels
-  const drShoulder = (cartridge.shoulder_start_diameter - (cartridge.neck_diameter_base || cartridge.neck_diameter_mouth)) / 2.0;
-  const effectiveShoulderLen = (cartridge.shoulder_angle > 0.5 && drShoulder > 0.001)
-    ? drShoulder / Math.tan((cartridge.shoulder_angle * Math.PI) / 180)
-    : cartridge.shoulder_length;
+  const effectiveShoulderLen = effectiveShoulderLength(cartridge);
   const pxRim = originX + cartridge.rim_thickness * scale;
   const pxExt = originX + (cartridge.rim_thickness + cartridge.extractor_width) * scale;
   const pxShoulderStart = originX + cartridge.body_length * scale;
@@ -751,6 +776,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
       label,
       symbol,
       initialValInches: currentInches,
+      initialSnapshot: { ...cartridge },
       displayVal: initialDisplay,
       isAngle,
       svgX: rotX,
@@ -762,11 +788,9 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
   };
 
   // Ghost Cartridge Geometry (Comparison Overlay)
-  let ghostOuterTopPath = '';
-  let ghostOuterBottomPath = '';
+  let ghostClosedPath = '';
   let ghostBulletPath = '';
   let ghostZHead = originX;
-  let ghostZMouth = originX;
   let ghostZTip = originX;
 
   if (ghostCartridge) {
@@ -780,20 +804,17 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
 
     const gSteps = 100;
     const gDz = ghostCartridge.case_length / gSteps;
-    const gRRim = getOuterRadiusAt(ghostCartridge, 0) * scale;
-
-    ghostOuterTopPath = `M ${ghostZHead} ${centerY - gRRim}`;
-    ghostOuterBottomPath = `M ${ghostZHead} ${centerY + gRRim}`;
-
+    const ghostPts: [number, number][] = [];
     for (let i = 0; i <= gSteps; i++) {
       const z = i * gDz;
-      const r = getOuterRadiusAt(ghostCartridge, z) * scale;
-      const px = ghostZHead + z * scale;
-      ghostOuterTopPath += ` L ${px} ${centerY - r}`;
-      ghostOuterBottomPath += ` L ${px} ${centerY + r}`;
+      ghostPts.push([ghostZHead + z * scale, getOuterRadiusAt(ghostCartridge, z) * scale]);
     }
+    ghostClosedPath = buildClosedSvgContour(
+      ghostPts,
+      (px, signedR) => `${px} ${centerY + signedR}`
+    );
 
-    ghostZMouth = ghostZHead + ghostCartridge.case_length * scale;
+    const ghostZMouth = ghostZHead + ghostCartridge.case_length * scale;
     ghostZTip = ghostZHead + ghostCartridge.coal * scale;
     const gRBullet = (ghostCartridge.bullet_diameter / 2) * scale;
 
@@ -999,7 +1020,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
     setEditingDim((prev) => {
       if (!prev) return null;
       const history = recordHistory ? [...prev.history, newDisplayVal] : prev.history;
-      return { ...prev, displayVal: newDisplayVal, history };
+      return { ...prev, displayVal: newDisplayVal, draftValue: undefined, history };
     });
   };
 
@@ -1078,10 +1099,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
 
   const handleRevertAndClose = () => {
     if (editingDim && onUpdateCartridge) {
-      onUpdateCartridge({
-        ...cartridge,
-        [editingDim.key]: editingDim.initialValInches,
-      });
+      onUpdateCartridge({ ...editingDim.initialSnapshot });
     }
     closePopover();
   };
@@ -1184,6 +1202,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
             title="Expand CAD Drafting Tools & Layers"
             style={{
               background: 'rgba(15, 20, 31, 0.92)',
+              WebkitBackdropFilter: 'blur(10px)',
               backdropFilter: 'blur(10px)',
               border: '1px solid var(--border-color)',
               borderRadius: '6px',
@@ -1225,6 +1244,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
             alignItems: 'center',
             gap: '5px',
             background: 'rgba(15, 20, 31, 0.94)',
+            WebkitBackdropFilter: 'blur(12px)',
             backdropFilter: 'blur(12px)',
             border: '1px solid var(--border-color)',
             borderRadius: '8px',
@@ -1310,6 +1330,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
                   top: 'calc(100% + 6px)',
                   left: 0,
                   background: 'rgba(15, 23, 42, 0.98)',
+                  WebkitBackdropFilter: 'blur(16px)',
                   backdropFilter: 'blur(16px)',
                   border: '1px solid var(--border-color)',
                   borderRadius: '6px',
@@ -1432,6 +1453,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
                   top: 'calc(100% + 6px)',
                   left: 0,
                   background: 'rgba(15, 23, 42, 0.98)',
+                  WebkitBackdropFilter: 'blur(16px)',
                   backdropFilter: 'blur(16px)',
                   border: '1px solid var(--border-color)',
                   borderRadius: '6px',
@@ -1688,6 +1710,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
                   top: 'calc(100% + 6px)',
                   right: 0,
                   background: 'rgba(15, 23, 42, 0.98)',
+                  WebkitBackdropFilter: 'blur(16px)',
                   backdropFilter: 'blur(16px)',
                   border: '1px solid var(--border-color)',
                   borderRadius: '6px',
@@ -1757,6 +1780,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
         alignItems: 'center',
         gap: '6px',
         background: 'rgba(18, 23, 33, 0.90)',
+        WebkitBackdropFilter: 'blur(8px)',
         backdropFilter: 'blur(8px)',
         border: '1px solid var(--border-color)',
         borderRadius: '6px',
@@ -1862,7 +1886,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
         const dNeck = reamer.chamber_neck_dia - cartridge.neck_diameter_mouth;
         const dBase = reamer.chamber_base_dia - cartridge.base_diameter;
         const fbJump = reamer.freebore_length;
-        const headspaceClearance = cartridge.rim_type === 'rimmed'
+        const headspaceClearance = (cartridge.rim_type === 'rimmed' || cartridge.rim_type === 'rimfire')
           ? reamer.chamber_rim_depth - cartridge.rim_thickness
           : 0.004;
 
@@ -1879,6 +1903,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
                 transform: 'translateX(-50%)',
                 zIndex: 22,
                 background: 'rgba(15, 20, 31, 0.92)',
+                WebkitBackdropFilter: 'blur(8px)',
                 backdropFilter: 'blur(8px)',
                 border: '1px solid #eab308',
                 borderRadius: '6px',
@@ -1917,6 +1942,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
               transform: chamberHudPos ? 'none' : 'translateX(-50%)',
               zIndex: 24,
               background: 'rgba(15, 20, 31, 0.96)',
+              WebkitBackdropFilter: 'blur(14px)',
               backdropFilter: 'blur(14px)',
               border: '1.5px solid #eab308',
               borderRadius: '8px',
@@ -2089,6 +2115,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
               transform: 'translateX(-50%)',
               zIndex: 25,
               background: 'rgba(15, 20, 31, 0.96)',
+              WebkitBackdropFilter: 'blur(12px)',
               backdropFilter: 'blur(12px)',
               border: '1.5px solid #f97316',
               borderRadius: '8px',
@@ -2195,6 +2222,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
             right: '16px',
             zIndex: 10,
             background: 'rgba(18, 23, 33, 0.88)',
+            WebkitBackdropFilter: 'blur(8px)',
             backdropFilter: 'blur(8px)',
             border: '1px solid var(--border-color)',
             borderRadius: '6px',
@@ -2246,6 +2274,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
               zIndex: 9,
               pointerEvents: 'none',
               background: 'rgba(10, 14, 22, 0.88)',
+              WebkitBackdropFilter: 'blur(8px)',
               backdropFilter: 'blur(8px)',
               border: '1px solid rgba(0, 240, 255, 0.35)',
               borderRadius: '6px',
@@ -2299,6 +2328,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
             left: '16px',
             zIndex: 10,
             background: 'rgba(18, 23, 33, 0.94)',
+            WebkitBackdropFilter: 'blur(8px)',
             backdropFilter: 'blur(8px)',
             border: '1px solid var(--cad-cyan)',
             borderRadius: '6px',
@@ -2433,6 +2463,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
               top: popoverPos ? popoverPos.y : defaultTop,
               zIndex: 2500,
               background: 'rgba(13, 17, 26, 0.98)',
+              WebkitBackdropFilter: 'blur(16px)',
               backdropFilter: 'blur(16px)',
               border: `1.5px solid ${isDraggingPopover ? '#fff' : 'var(--cad-cyan)'}`,
               borderRadius: '8px',
@@ -2672,8 +2703,16 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
                     type="number"
                     autoFocus
                     step={editingDim.isAngle ? 0.5 : isMetric ? 0.05 : 0.001}
-                    value={editingDim.displayVal}
-                    onChange={(e) => handleApplyDimChange(parseFloat(e.target.value) || 0)}
+                    value={editingDim.draftValue !== undefined ? editingDim.draftValue : editingDim.displayVal}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      setEditingDim((prev) => (prev ? { ...prev, draftValue: raw } : null));
+                      const parsed = parseFloat(raw);
+                      if (Number.isFinite(parsed)) {
+                        handleApplyDimChange(parsed);
+                      }
+                    }}
+                    onBlur={() => setEditingDim((prev) => (prev ? { ...prev, draftValue: undefined } : null))}
                     onWheel={handleInputWheel}
                     onKeyDown={handleInputKeyDown}
                     title="Direct number input. Use mouse wheel or Up/Down arrows to nudge (Shift = x10 coarse, Alt = fine)"
@@ -2915,7 +2954,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
                       }`
                     }}>
                       {chamberClearanceInches < 0 
-                        ? `⚠ INTERFERENCE (${chamberClearanceInches >= 0 ? '+' : ''}${isMetric ? (chamberClearanceInches * 25.4).toFixed(3) + 'mm' : chamberClearanceInches.toFixed(4) + '"'})` 
+                        ? `INTERFERENCE (${chamberClearanceInches >= 0 ? '+' : ''}${isMetric ? (chamberClearanceInches * 25.4).toFixed(3) + 'mm' : chamberClearanceInches.toFixed(4) + '"'})` 
                         : chamberClearanceInches < 0.0015 
                         ? `TIGHT FIT (+${isMetric ? (chamberClearanceInches * 25.4).toFixed(3) + 'mm' : chamberClearanceInches.toFixed(4) + '"'})` 
                         : `SAFE FIT (+${isMetric ? (chamberClearanceInches * 25.4).toFixed(3) + 'mm' : chamberClearanceInches.toFixed(4) + '"'})`}
@@ -3136,11 +3175,9 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
 
                       {/* Active Loaded Bullet Banner */}
                       {(() => {
-                        const activeBullet = BULLET_OPTIONS.find(b => 
-                          (appliedBulletNotification && b.id === appliedBulletNotification.id) ||
-                          (Math.abs(cartridge.bullet_diameter - b.caliber_inches) < 0.003 &&
-                           cartridge.bullet_weight_grains === b.weight_grains)
-                        );
+                        const activeBullet =
+                          (appliedBulletNotification && BULLET_OPTIONS.find(b => b.id === appliedBulletNotification.id)) ||
+                          getActiveBulletPreset(cartridge);
                         if (!activeBullet) return null;
 
                         return (
@@ -3685,7 +3722,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
           {ghostCartridge && (
             <g id="ghost-cartridge-overlay">
               <path
-                d={`${ghostOuterTopPath} L ${ghostZMouth} ${centerY} ${ghostOuterBottomPath} Z`}
+                d={ghostClosedPath}
                 fill="rgba(249, 115, 22, 0.08)"
                 stroke="#f97316"
                 strokeWidth="1.8"
@@ -3831,7 +3868,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
             </text>
 
             {/* Internal Gun-Type Assembly Cutaway */}
-            {mode === 'cutaway' && (
+            {activeDrawingMode === 'cutaway' && (
               <g id="little-boy-gun-cutaway">
                 {/* 3-Inch Naval Gun Barrel Tube */}
                 <rect
@@ -3896,7 +3933,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
                   fontFamily="var(--font-mono)"
                   fontWeight="bold"
                 >
-                  ☢ U-235 TARGET
+                  U-235 TARGET
                 </text>
               </g>
             )}
@@ -4101,7 +4138,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
                   textAnchor="middle"
                   fontFamily="monospace"
                 >
-                  🎯 Projectile: {cartridge.bullet_diameter.toFixed(3)}" ({cartridge.bullet_weight_grains || 0}gr) • Click
+                  Projectile: {cartridge.bullet_diameter.toFixed(3)}" ({cartridge.bullet_weight_grains || 0}gr) • Click
                 </text>
               </g>
             )}
@@ -4111,16 +4148,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
             {activeDrawingMode === 'cutaway' && (
               <>
                 {/* Powder Column Cavity */}
-                <path
-                  d={`
-                    M ${originX + cartridge.web_thickness * scale} ${centerY - getInnerRadiusAt(cartridge, cartridge.web_thickness) * scale}
-                    ${innerTopPath.substring(innerTopPath.indexOf('L'))}
-                    L ${pxMouth} ${centerY + rInnerMouth}
-                    ${innerBottomPath.substring(innerBottomPath.indexOf('L'))}
-                    Z
-                  `}
-                  fill="url(#powderHatch)"
-                />
+                <path d={innerClosedPath} fill="url(#powderHatch)" />
 
                 {/* Solid Head / Web Section */}
                 <rect
@@ -4160,14 +4188,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
 
                 {/* Outer Casing Outline */}
                 <path
-                  d={`
-                    ${outerTopPath}
-                    L ${pxMouth} ${centerY - rInnerMouth}
-                    L ${pxMouth} ${centerY + rInnerMouth}
-                    ${outerBottomPath}
-                    L ${originX} ${centerY}
-                    Z
-                  `}
+                  d={outerCutawayClosedPath}
                   fill="none"
                   stroke="var(--cad-cyan)"
                   strokeWidth="1.8"
@@ -4235,27 +4256,14 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
 
                 {/* Bottom Half: Solid Exterior Fill */}
                 <path
-                  d={`
-                    M ${originX} ${centerY}
-                    ${outerBottomPath.substring(outerBottomPath.indexOf('L'))}
-                    L ${pxMouth} ${centerY}
-                    Z
-                  `}
+                  d={`${outerBottomPath} L ${pxMouth} ${centerY} Z`}
                   fill="rgba(0, 210, 255, 0.05)"
                   stroke="none"
                 />
 
                 {/* Full Outer Profile Outline */}
                 <path
-                  d={`
-                    ${outerTopPath}
-                    L ${pxMouth} ${centerY - rInnerMouth}
-                    L ${pxMouth} ${centerY}
-                    L ${pxMouth} ${centerY + rMouth}
-                    ${outerBottomPath}
-                    L ${originX} ${centerY}
-                    Z
-                  `}
+                  d={outerClosedPath}
                   fill="none"
                   stroke="var(--cad-cyan)"
                   strokeWidth="1.8"
@@ -4268,14 +4276,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
               <>
                 {/* Outer Profile Wireframe (No Fill) */}
                 <path
-                  d={`
-                    ${outerTopPath}
-                    L ${pxMouth} ${centerY - rMouth}
-                    L ${pxMouth} ${centerY + rMouth}
-                    ${outerBottomPath}
-                    L ${originX} ${centerY}
-                    Z
-                  `}
+                  d={outerClosedPath}
                   fill="none"
                   stroke="var(--cad-cyan)"
                   strokeWidth="1.6"
@@ -4340,14 +4341,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
             {/* 4. OUTLINE & CHAMBER_FIT MODES: Crisp Exterior Silhouette */}
             {(activeDrawingMode === 'outline' || activeDrawingMode === 'chamber_fit') && (
               <path
-                d={`
-                  ${outerTopPath}
-                  L ${pxMouth} ${centerY - rMouth}
-                  L ${pxMouth} ${centerY + rMouth}
-                  ${outerBottomPath}
-                  L ${originX} ${centerY}
-                  Z
-                `}
+                d={outerClosedPath}
                 fill={activeDrawingMode === 'chamber_fit' ? 'rgba(0, 210, 255, 0.08)' : 'rgba(0, 210, 255, 0.04)'}
                 stroke="var(--cad-cyan)"
                 strokeWidth="1.8"
@@ -4445,7 +4439,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
                   {renderDimensionBadge(
                     originX + (datumHeadspace.datum_length * scale) / 2,
                     centerY - (datumHeadspace.datum_diameter / 2) * scale - 28,
-                    `Datum Ø${datumHeadspace.datum_diameter.toFixed(3)}" @ ${fmt(datumHeadspace.datum_length)}`,
+                    `Datum Ø${fmt(datumHeadspace.datum_diameter)} @ ${fmt(datumHeadspace.datum_length)}`,
                     'case_length',
                     'SAAMI Datum Headspace',
                     'L_datum',

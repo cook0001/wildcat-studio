@@ -3,6 +3,7 @@ import { CartridgeSpec } from '../types/cartridge';
 import { calculateHeadspaceGauges, calculateDatumHeadspace } from '../utils/volumetrics';
 import { X, Shield, AlertTriangle, CheckCircle, Copy, Check, Printer, Info, Disc } from 'lucide-react';
 import { openStandalonePrintWindow } from '../utils/fileExport';
+import { escapeHtml } from '../utils/cartridgeHelpers';
 
 interface HeadspaceModalProps {
   isOpen: boolean;
@@ -90,12 +91,14 @@ Recommended Hardness: 60-64 HRC Ground Tool Steel`;
 
   const handlePrintGauges = () => {
     const datum = gauges.datum_diameter;
+    const safeName = escapeHtml(cartridge.name);
+    const safeStandard = escapeHtml(cartridge.standard);
     const printHtml = `
       <!DOCTYPE html>
       <html>
         <head>
           <meta charset="utf-8" />
-          <title>${cartridge.name} Headspace Gauge Calibration Sheet</title>
+          <title>${safeName} Headspace Gauge Calibration Sheet</title>
           <style>
             @page { size: letter landscape; margin: 0.5in; }
             body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #0f172a; padding: 24px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -115,8 +118,8 @@ Recommended Hardness: 60-64 HRC Ground Tool Steel`;
           </style>
         </head>
         <body>
-          <h1>${cartridge.name} &bull; Toolroom Headspace Gauge Inspection Sheet</h1>
-          <h2>Chamber Standard: ${cartridge.standard} &bull; Headspace Datum: ${gauges.type.toUpperCase()} &bull; Datum Diameter: ${fmt(datum)} &bull; Shoulder Angle: ${cartridge.shoulder_angle.toFixed(1)}&deg;</h2>
+          <h1>${safeName} &bull; Toolroom Headspace Gauge Inspection Sheet</h1>
+          <h2>Chamber Standard: ${safeStandard} &bull; Headspace Datum: ${escapeHtml(gauges.type.toUpperCase())} &bull; Datum Diameter: ${fmt(datum)} &bull; Shoulder Angle: ${cartridge.shoulder_angle.toFixed(1)}&deg;</h2>
           
           <div class="grid">
             <div class="card">

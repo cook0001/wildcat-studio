@@ -2,11 +2,11 @@
 <!-- Provide a clear, concise summary of the changes and motivation behind them. -->
 
 ## Type of Change
-- [ ] 🐛 Bug fix (non-breaking change fixing an issue)
-- [ ] ✨ New cartridge / CAD feature (non-breaking change adding functionality)
-- [ ] ⚡ Numerical / Solver performance optimization
-- [ ] 🎨 UI/UX styling & canvas drafting responsiveness
-- [ ] 🔧 Build / CI/CD / Dependencies
+- [ ] Bug fix (non-breaking change fixing an issue)
+- [ ] New cartridge / CAD feature (non-breaking change adding functionality)
+- [ ] Numerical / Solver performance optimization
+- [ ] UI/UX styling & canvas drafting responsiveness
+- [ ] Build / CI/CD / Dependencies
 
 ## Pre-Submission Quality Checklist
 - [ ] **Frontend TypeScript**: Ran `npx tsc --noEmit` with zero errors.

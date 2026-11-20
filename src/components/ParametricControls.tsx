@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { CartridgeSpec, RimType, CARTRIDGE_PRESETS } from '../types/cartridge';
 import { isStraightWall } from '../utils/volumetrics';
 import { BULLET_OPTIONS, getBulletsForCaliber } from '../data/bullets';
+import { applyBulletPresetToCartridge, getActiveBulletPreset } from '../utils/cartridgeHelpers';
 import { Sliders, Shield, ShieldOff, Disc, CircleDot, Crosshair, ChevronDown, ChevronRight, PanelLeftClose, Undo2 } from 'lucide-react';
 
 interface ParametricControlsProps {
@@ -19,7 +20,7 @@ export const ParametricControls: React.FC<ParametricControlsProps> = ({
   isOpen = true,
   onClose,
 }) => {
-  const SECTION_KEYS = ['rim', 'body', 'shoulder', 'bullet', 'web'];
+  const SECTION_KEYS = ['rim', 'body', 'shoulder', 'internal', 'bullet'];
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(() => {
     try {
       const saved = localStorage.getItem('wildcat_sidebar_collapsed_sections');
@@ -376,6 +377,7 @@ export const ParametricControls: React.FC<ParametricControlsProps> = ({
               <option value="semi_rimmed">Semi-Rimmed</option>
               <option value="belted">Belted Magnum</option>
               <option value="rebated">Rebated Rim</option>
+              <option value="rimfire">Rimfire</option>
             </select>
           </div>
         </div>
@@ -844,17 +846,14 @@ export const ParametricControls: React.FC<ParametricControlsProps> = ({
 
               {/* Factory Bullet Preset Selector */}
               {(() => {
-                const activeBullet = BULLET_OPTIONS.find(b =>
-                  Math.abs(b.caliber_inches - cartridge.bullet_diameter) < 0.003 &&
-                  cartridge.bullet_weight_grains === b.weight_grains
-                );
+                const activeBullet = getActiveBulletPreset(cartridge);
 
                 return (
                   <div style={{ marginBottom: '12px' }}>
                     <div style={{ fontSize: '10px', fontWeight: 700, color: 'var(--cad-cyan)', marginBottom: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span>FACTORY BULLET MODEL PRESET</span>
                       {activeBullet && (
-                        <span style={{ fontSize: '8px', color: '#34d399', fontWeight: 600 }}>✓ LOADED</span>
+                        <span style={{ fontSize: '8px', color: '#34d399', fontWeight: 600 }}>LOADED</span>
                       )}
                     </div>
                     <select
@@ -862,20 +861,7 @@ export const ParametricControls: React.FC<ParametricControlsProps> = ({
                       onChange={(e) => {
                         const selected = BULLET_OPTIONS.find(b => b.id === e.target.value);
                         if (selected) {
-                          const wallT = cartridge.neck_wall_thickness || 0.015;
-                          const newMouth = +(selected.caliber_inches + 2 * wallT).toFixed(4);
-                          const seatDepth = selected.recommended_seating_depth || cartridge.seating_depth || 0.300;
-                          const newCoal = +(cartridge.case_length + selected.length_inches - seatDepth).toFixed(4);
-                          onChange({
-                            ...cartridge,
-                            bullet_diameter: selected.caliber_inches,
-                            bullet_weight_grains: selected.weight_grains,
-                            bullet_length: selected.length_inches,
-                            seating_depth: seatDepth,
-                            coal: newCoal,
-                            neck_diameter_mouth: newMouth,
-                            neck_diameter_base: newMouth,
-                          });
+                          onChange(applyBulletPresetToCartridge(cartridge, selected));
                         }
                       }}
                       style={{
@@ -979,6 +965,7 @@ const SliderField: React.FC<SliderFieldProps> = ({
   onChange,
   onReset,
 }) => {
+  const [draft, setDraft] = useState<string | null>(null);
   const isModified = defaultValue !== undefined && Math.abs(value - defaultValue) > (unit === '°' ? 0.05 : 0.0005);
 
   return (
@@ -994,7 +981,10 @@ const SliderField: React.FC<SliderFieldProps> = ({
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
           {isModified && onReset && (
             <button
-              onClick={onReset}
+              onClick={() => {
+                setDraft(null);
+                onReset();
+              }}
               title={`Undo change to ${label} (revert to ${defaultValue}${unit})`}
               style={{
                 background: 'rgba(0, 210, 255, 0.12)',
@@ -1017,9 +1007,18 @@ const SliderField: React.FC<SliderFieldProps> = ({
           )}
           <input
             type="number"
-            value={value}
+            value={draft !== null ? draft : value}
             step={step}
-            onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
+            onFocus={() => setDraft(String(value))}
+            onChange={(e) => {
+              const raw = e.target.value;
+              setDraft(raw);
+              const parsed = parseFloat(raw);
+              if (Number.isFinite(parsed)) {
+                onChange(parsed);
+              }
+            }}
+            onBlur={() => setDraft(null)}
             style={{ width: '65px', textAlign: 'right' }}
           />
           <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{unit}</span>
@@ -1031,7 +1030,10 @@ const SliderField: React.FC<SliderFieldProps> = ({
         max={max}
         step={step}
         value={value}
-        onChange={(e) => onChange(parseFloat(e.target.value))}
+        onChange={(e) => {
+          setDraft(null);
+          onChange(parseFloat(e.target.value));
+        }}
       />
     </div>
   );

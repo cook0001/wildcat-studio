@@ -1,11 +1,28 @@
 import { CartridgeSpec, ReamerSpec } from '../types/cartridge';
 
+function escapeTypst(value: string): string {
+  return value.replace(/([\\#*_$<>\[\]@`])/g, '\\$1');
+}
+
+const TYPST_FOOTER = `context [
+    #let page_number = counter(page).get().first()
+    #let total_pages = counter(page).final().first()
+    #align(center)[
+      #text(size: 8pt, fill: rgb("#64748b"))[Page #page_number of #total_pages — Wildcat Studio Engineering Suite]
+    ]
+  ]`;
+
 /**
- * Generates Typst source code for an industrial Chamber Reamer Order Requisition Sheet,
+ * Generates Typst source code for a Chamber Reamer Order Requisition Sheet,
  * formatted for tooling manufacturers such as Pacific Tool & Gauge (PTG), Manson Precision, and JGS Precision.
  */
 export function generateReamerTypst(cartridge: CartridgeSpec, reamer: ReamerSpec, manufacturer: string = 'General Toolmaker'): string {
-  const designer = cartridge.designer || 'Custom Wildcatting Dept.';
+  const safeName = escapeTypst(cartridge.name);
+  const safeCategory = escapeTypst(cartridge.category);
+  const safeParent = escapeTypst(cartridge.parent_case || 'Proprietary / Scratch');
+  const safeStandard = escapeTypst(cartridge.standard);
+  const safeDesigner = escapeTypst(cartridge.designer || 'Custom Wildcatting Dept.');
+  const safeMfg = escapeTypst(manufacturer);
   const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 
   return `
@@ -14,15 +31,9 @@ export function generateReamerTypst(cartridge: CartridgeSpec, reamer: ReamerSpec
   flipped: false,
   margin: (x: 1.5cm, y: 1.5cm),
   header: align(right)[
-    #text(size: 8pt, fill: rgb("#64748b"))[Wildcat Studio Tooling Requisition | ${cartridge.name}]
+    #text(size: 8pt, fill: rgb("#64748b"))[Wildcat Studio Tooling Requisition | ${safeName}]
   ],
-  footer: locate(loc => {
-    let page_number = counter(page).at(loc).first()
-    let total_pages = counter(page).final(loc).first()
-    align(center)[
-      #text(size: 8pt, fill: rgb("#64748b"))[Page #page_number of #total_pages — Wildcat Studio Engineering Suite]
-    ]
-  })
+  footer: ${TYPST_FOOTER}
 )
 
 #set text(font: "Helvetica", size: 9pt, fill: rgb("#0f172a"))
@@ -40,11 +51,11 @@ export function generateReamerTypst(cartridge: CartridgeSpec, reamer: ReamerSpec
     [
       #text(size: 16pt, weight: "bold", fill: rgb("#1e3a8a"))[CHAMBER REAMER SPECIFICATION & ORDER]
       #v(2pt)
-      #text(size: 10pt, weight: "medium", fill: rgb("#475569"))[Toolmaker Requisition Sheet | ${manufacturer}]
+      #text(size: 10pt, weight: "medium", fill: rgb("#475569"))[Toolmaker Requisition Sheet | ${safeMfg}]
     ],
     [
       #text(size: 9pt, weight: "bold")[Date:] #text(size: 9pt)[${dateStr}] \\
-      #text(size: 9pt, weight: "bold")[Standard:] #text(size: 9pt)[${cartridge.standard}]
+      #text(size: 9pt, weight: "bold")[Standard:] #text(size: 9pt)[${safeStandard}]
     ]
   )
 ]
@@ -60,10 +71,10 @@ export function generateReamerTypst(cartridge: CartridgeSpec, reamer: ReamerSpec
       #text(weight: "bold", size: 10pt, fill: rgb("#1e293b"))[Cartridge Identification]
       #line(length: 100%, stroke: 0.5pt + rgb("#cbd5e1"))
       #v(4pt)
-      *Name:* ${cartridge.name} \\
-      *Category:* ${cartridge.category} \\
-      *Parent Case:* ${cartridge.parent_case || "Proprietary / Scratch"} \\
-      *Designer:* ${designer} \\
+      *Name:* ${safeName} \\
+      *Category:* ${safeCategory} \\
+      *Parent Case:* ${safeParent} \\
+      *Designer:* ${safeDesigner} \\
       *Max Pressure:* ${cartridge.max_pressure_bar} bar (${Math.round(cartridge.max_pressure_bar * 14.5038)} PSI)
     ]
   ],
@@ -76,7 +87,7 @@ export function generateReamerTypst(cartridge: CartridgeSpec, reamer: ReamerSpec
       *Pilot Type:* Live Bushing Pilot (Precision Ground) \\
       *Drive Shank:* Standard Toolroom 7/16"-24 / Weldon Flat \\
       *Tolerance Class:* Class AAA Toolroom Precision Ground \\
-      *Target Manufacturer:* ${manufacturer}
+      *Target Manufacturer:* ${safeMfg}
     ]
   ]
 )
@@ -143,6 +154,8 @@ export function generateReamerTypst(cartridge: CartridgeSpec, reamer: ReamerSpec
  * Generates Typst source code for a Case Forming & Fireforming Engineering Report.
  */
 export function generateFormingTypst(cartridge: CartridgeSpec, parentCase: CartridgeSpec, steps: string[]): string {
+  const safeName = escapeTypst(cartridge.name);
+  const safeParentName = escapeTypst(parentCase.name);
   const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 
   return `
@@ -150,15 +163,9 @@ export function generateFormingTypst(cartridge: CartridgeSpec, parentCase: Cartr
   paper: "us-letter",
   margin: (x: 1.5cm, y: 1.5cm),
   header: align(right)[
-    #text(size: 8pt, fill: rgb("#64748b"))[Case Forming Schedule | ${cartridge.name}]
+    #text(size: 8pt, fill: rgb("#64748b"))[Case Forming Schedule | ${safeName}]
   ],
-  footer: locate(loc => {
-    let page_number = counter(page).at(loc).first()
-    let total_pages = counter(page).final(loc).first()
-    align(center)[
-      #text(size: 8pt, fill: rgb("#64748b"))[Page #page_number of #total_pages — Wildcat Studio Engineering Suite]
-    ]
-  })
+  footer: ${TYPST_FOOTER}
 )
 
 #set text(font: "Helvetica", size: 9pt, fill: rgb("#0f172a"))
@@ -192,7 +199,7 @@ export function generateFormingTypst(cartridge: CartridgeSpec, parentCase: Cartr
     #block(stroke: rgb("#e2e8f0"), inset: 8pt, radius: 4pt, width: 100%)[
       #text(weight: "bold", size: 10pt, fill: rgb("#1e293b"))[Target Wildcat Case]
       #line(length: 100%, stroke: 0.5pt + rgb("#cbd5e1"))
-      *Name:* ${cartridge.name} \\
+      *Name:* ${safeName} \\
       *Caliber / Bullet:* .${Math.round(cartridge.bullet_diameter * 1000)} (${cartridge.bullet_diameter.toFixed(4)}") \\
       *Case Length (L3):* ${cartridge.case_length.toFixed(4)}" \\
       *Shoulder Angle:* ${cartridge.shoulder_angle.toFixed(1)} deg
@@ -202,7 +209,7 @@ export function generateFormingTypst(cartridge: CartridgeSpec, parentCase: Cartr
     #block(stroke: rgb("#e2e8f0"), inset: 8pt, radius: 4pt, width: 100%)[
       #text(weight: "bold", size: 10pt, fill: rgb("#1e293b"))[Donor Parent Case]
       #line(length: 100%, stroke: 0.5pt + rgb("#cbd5e1"))
-      *Parent:* ${parentCase.name} \\
+      *Parent:* ${safeParentName} \\
       *Parent Caliber:* .${Math.round(parentCase.bullet_diameter * 1000)} (${parentCase.bullet_diameter.toFixed(4)}") \\
       *Parent Length:* ${parentCase.case_length.toFixed(4)}" \\
       *Parent Shoulder:* ${parentCase.shoulder_angle.toFixed(1)} deg
@@ -221,7 +228,7 @@ ${steps.map((step, idx) => `
   radius: 3pt,
   width: 100%
 )[
-  #text(weight: "bold", fill: rgb("#047857"))[Step ${idx + 1}:] ${step}
+  #text(weight: "bold", fill: rgb("#047857"))[Step ${idx + 1}:] ${escapeTypst(step)}
 ]
 #v(4pt)
 `).join('')}

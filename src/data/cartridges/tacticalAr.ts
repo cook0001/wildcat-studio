@@ -598,7 +598,7 @@ export const TACTICAL_AR_CARTRIDGES: Record<string, CartridgeSpec> = {
   "6mm_mongoose": {
       "id": "6mm_mongoose",
       "name": "6mm Mongoose (6x45mm Improved 40°)",
-      "category": "Tactical AR & Small Frame",
+      "category": "AR-15 & Small Frame Tactical",
       "standard": "Wildcat",
       "units": "imperial",
       "rim_type": "rimless",
@@ -631,7 +631,7 @@ export const TACTICAL_AR_CARTRIDGES: Record<string, CartridgeSpec> = {
   "762x40_wt": {
       "id": "762x40_wt",
       "name": "7.62x40mm WT (Wilson Tactical)",
-      "category": "Tactical AR & Small Frame",
+      "category": "AR-15 & Small Frame Tactical",
       "standard": "Wildcat",
       "units": "imperial",
       "rim_type": "rimless",
@@ -664,7 +664,7 @@ export const TACTICAL_AR_CARTRIDGES: Record<string, CartridgeSpec> = {
   "30_herrett": {
       "id": "30_herrett",
       "name": ".30 Herrett (Contender / AR)",
-      "category": "Tactical AR & Small Frame",
+      "category": "AR-15 & Small Frame Tactical",
       "standard": "Wildcat",
       "units": "imperial",
       "rim_type": "rimmed",
@@ -697,7 +697,7 @@ export const TACTICAL_AR_CARTRIDGES: Record<string, CartridgeSpec> = {
   "762x37_musang": {
       "id": "762x37_musang",
       "name": "7.62x37mm Musang (Filipino Tactical)",
-      "category": "Tactical AR & Small Frame",
+      "category": "AR-15 & Small Frame Tactical",
       "standard": "Wildcat",
       "units": "metric",
       "rim_type": "rimless",

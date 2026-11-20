@@ -2,8 +2,15 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { CartridgeSpec } from '../types/cartridge';
 import { getOuterRadiusAt, getInnerRadiusAt } from '../utils/volumetrics';
-import { Eye, Rotate3d, Download, ZoomIn, ZoomOut, Maximize2, X } from 'lucide-react';
+import { Eye, Rotate3d, Download, ZoomIn, ZoomOut, Maximize2, X, Crosshair } from 'lucide-react';
 import { BULLET_OPTIONS, getBulletsForCaliber } from '../data/bullets';
+import { saveExportFile } from '../utils/fileExport';
+import {
+  applyBulletPresetToCartridge,
+  generateCartridgeStlBinary,
+  getActiveBulletPreset,
+} from '../utils/cartridgeHelpers';
+import { useToast } from './common/Toast';
 
 interface ThreeViewportProps {
   cartridge: CartridgeSpec;
@@ -18,11 +25,14 @@ export const ThreeViewport: React.FC<ThreeViewportProps> = ({
   onUpdateCartridge,
   onSelectBullet
 }) => {
+  const { showSuccess, showError } = useToast();
   const mountRef = useRef<HTMLDivElement>(null);
   const [isCutaway3D, setIsCutaway3D] = useState<boolean>(false);
   const [cutawaySlicePct, setCutawaySlicePct] = useState<number>(50); // 50% = 90 deg quarter pie slice, 100% = 180 deg half section
   const [wireframe, setWireframe] = useState<boolean>(false);
   const [rotationSpeed, setRotationSpeed] = useState<number>(0.003);
+  const rotationSpeedRef = useRef<number>(rotationSpeed);
+  rotationSpeedRef.current = rotationSpeed;
   const [webglSupported, setWebglSupported] = useState<boolean>(true);
   const [isBulletHUDOpen, setIsBulletHUDOpen] = useState<boolean>(false);
   const [isHoveringBullet3D, setIsHoveringBullet3D] = useState<boolean>(false);
@@ -33,6 +43,22 @@ export const ThreeViewport: React.FC<ThreeViewportProps> = ({
   const caseMeshRef = useRef<THREE.Mesh | null>(null);
   const bulletMeshRef = useRef<THREE.Mesh | null>(null);
   const groupRef = useRef<THREE.Group | null>(null);
+
+  const disposeGroupChildren = (group: THREE.Group | null) => {
+    if (!group) return;
+    while (group.children.length > 0) {
+      const child = group.children[0] as THREE.Mesh;
+      group.remove(child);
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) {
+        if (Array.isArray(child.material)) {
+          child.material.forEach((m) => m.dispose());
+        } else {
+          child.material.dispose();
+        }
+      }
+    }
+  };
 
   const onSelectBulletRef = useRef(onSelectBullet);
   onSelectBulletRef.current = onSelectBullet;
@@ -178,19 +204,22 @@ export const ThreeViewport: React.FC<ThreeViewportProps> = ({
     window.addEventListener('mouseup', handleMouseUp);
     dom.addEventListener('wheel', handleWheel, { passive: false });
 
-    // Render loop
+    // Render loop (delta-time scaled so auto-spin speed is consistent across refresh rates)
     let animId: number;
-    const animate = () => {
+    let lastTime = performance.now();
+    const animate = (now: number) => {
       animId = requestAnimationFrame(animate);
+      const dt = Math.min(0.1, (now - lastTime) / 1000);
+      lastTime = now;
 
-      if (groupRef.current && !isMouseDown) {
-        groupRef.current.rotation.y += rotationSpeed;
+      if (groupRef.current && !isMouseDown && rotationSpeedRef.current > 0) {
+        groupRef.current.rotation.y += rotationSpeedRef.current * dt * 60;
       }
 
       camera.lookAt(0, 0, 0);
       renderer.render(scene, camera);
     };
-    animate();
+    animId = requestAnimationFrame(animate);
 
     const handleResize = () => {
       if (!currentMount || !renderer) return;
@@ -207,6 +236,7 @@ export const ThreeViewport: React.FC<ThreeViewportProps> = ({
       window.removeEventListener('mouseup', handleMouseUp);
       dom.removeEventListener('wheel', handleWheel);
       window.removeEventListener('resize', handleResize);
+      disposeGroupChildren(groupRef.current);
       if (currentMount.contains(renderer.domElement)) {
         currentMount.removeChild(renderer.domElement);
       }
@@ -214,27 +244,23 @@ export const ThreeViewport: React.FC<ThreeViewportProps> = ({
     };
   }, []);
 
-  // Update Geometry when Cartridge or View options change
+  // Reframe camera when switching to a different cartridge preset (not on parameter slider edits)
   useEffect(() => {
-    const group = groupRef.current;
-    if (!group) return;
-
-    // Clear previous meshes
-    while (group.children.length > 0) {
-      const child = group.children[0] as THREE.Mesh;
-      group.remove(child);
-      if (child.geometry) child.geometry.dispose();
-    }
-
-    const isLittleBoy = cartridge.id === 'little_boy_ordnance';
-
-    // Camera Auto-Framing based on model bounding size
     const maxDim = Math.max(cartridge.coal, cartridge.rim_diameter * 2.5);
     if (cameraRef.current) {
       const dist = Math.max(4.5, maxDim * 1.35);
       cameraRef.current.position.set(dist * 0.7, dist * 0.45, dist * 0.75);
     }
+  }, [cartridge.id]);
 
+  // Update Geometry when Cartridge or View options change
+  useEffect(() => {
+    const group = groupRef.current;
+    if (!group) return;
+
+    disposeGroupChildren(group);
+
+    const isLittleBoy = cartridge.id === 'little_boy_ordnance';
     const zOffset = -cartridge.coal / 2.0;
     const cutawayAngle = (Math.max(10, Math.min(100, cutawaySlicePct)) / 100) * Math.PI;
     const phiLength = isCutaway3D ? Math.PI * 2.0 - cutawayAngle : Math.PI * 2.0;
@@ -522,44 +548,23 @@ export const ThreeViewport: React.FC<ThreeViewportProps> = ({
     }
   }, [rotation]);
 
-  // Export 3D STL
-  const handleExportSTL = () => {
-    const group = groupRef.current;
-    if (!group) return;
-
-    let stl = 'solid cartridge\n';
-
-    group.traverse((child) => {
-      if (child instanceof THREE.Mesh && child.geometry) {
-        const geo = child.geometry.clone();
-        geo.applyMatrix4(child.matrixWorld);
-        const pos = geo.attributes.position;
-        const index = geo.index;
-
-        if (index) {
-          for (let i = 0; i < index.count; i += 3) {
-            const a = index.getX(i);
-            const b = index.getX(i + 1);
-            const c = index.getX(i + 2);
-
-            stl += '  facet normal 0 0 0\n    outer loop\n';
-            stl += `      vertex ${pos.getX(a).toFixed(4)} ${pos.getY(a).toFixed(4)} ${pos.getZ(a).toFixed(4)}\n`;
-            stl += `      vertex ${pos.getX(b).toFixed(4)} ${pos.getY(b).toFixed(4)} ${pos.getZ(b).toFixed(4)}\n`;
-            stl += `      vertex ${pos.getX(c).toFixed(4)} ${pos.getY(c).toFixed(4)} ${pos.getZ(c).toFixed(4)}\n`;
-            stl += '    endloop\n  endfacet\n';
-          }
-        }
-      }
+  // Export 3D STL via native Tauri save dialog or browser download
+  const handleExportSTL = async () => {
+    const cutawayAngle = (Math.max(10, Math.min(100, cutawaySlicePct)) / 100) * Math.PI;
+    const phiLength = isCutaway3D ? Math.PI * 2 - cutawayAngle : Math.PI * 2;
+    const stlBytes = generateCartridgeStlBinary(cartridge, phiLength);
+    const res = await saveExportFile({
+      defaultFileName: `${cartridge.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}_3d_print.stl`,
+      filters: [{ name: 'STL 3D Mesh (Binary)', extensions: ['stl'] }],
+      content: stlBytes,
+      mimeType: 'model/stl',
+      title: 'Export 3D Printable STL Mesh',
     });
-    stl += 'endsolid cartridge\n';
-
-    const blob = new Blob([stl], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${cartridge.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}_3d_print.stl`;
-    a.click();
-    URL.revokeObjectURL(url);
+    if (res.success && res.path) {
+      showSuccess('3D STL Exported', `Saved to ${res.path}`);
+    } else if (res.error) {
+      showError('STL Export Failed', res.error);
+    }
   };
 
   const handleZoomIn3D = () => {
@@ -788,7 +793,7 @@ export const ThreeViewport: React.FC<ThreeViewportProps> = ({
           gap: '6px',
           zIndex: 10
         }}>
-          <span style={{ color: 'var(--cad-copper)' }}>🎯</span>
+          <Crosshair size={13} color="var(--cad-copper)" />
           <span>Projectile: <strong>.{cartridge.bullet_diameter.toString().split('.')[1] || cartridge.bullet_diameter}"</strong> ({cartridge.bullet_weight_grains || 0}gr)</span>
           <span style={{ color: 'var(--cad-cyan)', fontSize: '10px' }}>— Click to inspect & select factory bullet model</span>
         </div>
@@ -815,7 +820,7 @@ export const ThreeViewport: React.FC<ThreeViewportProps> = ({
         }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '6px' }}>
             <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--cad-copper)', display: 'flex', alignItems: 'center', gap: '5px' }}>
-              🎯 3D PROJECTILE INSPECTOR
+              <Crosshair size={12} /> 3D PROJECTILE INSPECTOR
             </span>
             <button
               onClick={() => setIsBulletHUDOpen(false)}
@@ -848,24 +853,11 @@ export const ThreeViewport: React.FC<ThreeViewportProps> = ({
               FACTORY BULLET MODEL PRESET:
             </div>
             <select
-              value={BULLET_OPTIONS.find(b => Math.abs(b.caliber_inches - cartridge.bullet_diameter) < 0.003 && b.weight_grains === cartridge.bullet_weight_grains)?.id || ''}
+              value={getActiveBulletPreset(cartridge)?.id || ''}
               onChange={(e) => {
                 const selected = BULLET_OPTIONS.find(b => b.id === e.target.value);
                 if (selected && onUpdateCartridge) {
-                  const wallT = cartridge.neck_wall_thickness || 0.015;
-                  const newMouth = +(selected.caliber_inches + 2 * wallT).toFixed(4);
-                  const seatDepth = selected.recommended_seating_depth || cartridge.seating_depth || 0.300;
-                  const newCoal = +(cartridge.case_length + selected.length_inches - seatDepth).toFixed(4);
-                  onUpdateCartridge({
-                    ...cartridge,
-                    bullet_diameter: selected.caliber_inches,
-                    bullet_weight_grains: selected.weight_grains,
-                    bullet_length: selected.length_inches,
-                    seating_depth: seatDepth,
-                    coal: newCoal,
-                    neck_diameter_mouth: newMouth,
-                    neck_diameter_base: newMouth,
-                  });
+                  onUpdateCartridge(applyBulletPresetToCartridge(cartridge, selected));
                 }
               }}
               style={{

@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, ExternalLink } from 'lucide-react';
 import { openExternalLink } from '../../utils/openExternal';
+import { CARTRIDGE_PRESET_COUNT, getAppVersionLabel } from '../../utils/cartridgeHelpers';
 
 interface AboutModalProps {
   isOpen: boolean;
@@ -9,6 +10,14 @@ interface AboutModalProps {
 }
 
 export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose, onOpenLicense }) => {
+  const [version, setVersion] = useState<string>(typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.1.0');
+
+  useEffect(() => {
+    if (isOpen) {
+      getAppVersionLabel().then(setVersion).catch(() => {});
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   return (
@@ -61,20 +70,20 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose, onOpenL
           Wildcat Studio
         </h3>
         <p style={{ fontSize: '12px', color: 'var(--cad-cyan)', fontFamily: 'var(--font-mono)', marginBottom: '16px' }}>
-          Version 1.0.0 (Cleanroom CAD Suite)
+          Version {version} (Cleanroom CAD Suite)
         </p>
 
         <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: '20px' }}>
           <p style={{ marginBottom: '10px' }}>
-            High-performance desktop cartridge design, chamber reamer modeling, and internal cutaway telemetry suite.
+            Desktop cartridge design, chamber reamer modeling, and internal cutaway telemetry suite.
           </p>
           <ul style={{ paddingLeft: '18px', listStyleType: 'disc', marginBottom: '14px' }}>
-            <li>269 Standard SAAMI, CIP, and Custom Wildcat Presets</li>
-            <li>QuickLOAD database (<kbd>.vol</kbd>) and Universal QDF interchange</li>
-            <li>Direct LoadBench (.ldb) and RangeStudio Ballistics (.rsb) export</li>
+            <li>{CARTRIDGE_PRESET_COUNT} SAAMI, CIP, and Custom Wildcat Presets</li>
+            <li>QuickLOAD (<kbd>.vol</kbd>) and Universal QDF interchange</li>
+            <li>Direct LoadBench (<kbd>.loadbench</kbd>) and RangeStudio Ballistics (<kbd>.rsb</kbd>) export</li>
             <li>AutoCAD vector (<kbd>.dxf</kbd>) geometry export</li>
             <li>Three.js solid modeler with 3D printable (<kbd>.stl</kbd>) mesh output</li>
-            <li>1000-slice Simpson rule volumetric physics engine</li>
+            <li>Composite Simpson numerical volumetric engine</li>
           </ul>
 
           <div style={{
@@ -223,7 +232,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose, onOpenL
             gap: '6px'
           }}>
             <div>
-              <strong style={{ color: '#fff' }}>Proprietary Freeware License:</strong> Cleanroom implementation. All dimensional formulas derived from public domain SAAMI/CIP technical drawings and Don Miller ballistic equations.
+              <strong style={{ color: '#fff' }}>MIT Open-Source License:</strong> Cleanroom implementation. All dimensional formulas derived from public domain SAAMI/CIP technical drawings and Don Miller ballistic equations.
             </div>
             {onOpenLicense && (
               <button

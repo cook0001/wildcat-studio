@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CartridgeSpec } from '../types/cartridge';
 import { calculateMillerStability } from '../utils/volumetrics';
 import { getBulletsForCaliber, BULLET_OPTIONS } from '../data/bullets';
 import { X, Compass, Info, Check, Copy, Printer, Download } from 'lucide-react';
 import { openStandalonePrintWindow, saveExportFile } from '../utils/fileExport';
+import { escapeHtml } from '../utils/cartridgeHelpers';
 
 interface TwistStabilityModalProps {
   isOpen: boolean;
@@ -26,6 +27,13 @@ export const TwistStabilityModal: React.FC<TwistStabilityModalProps> = ({
   const [twistRate, setTwistRate] = useState<number>(10.0);
   const [velocity, setVelocity] = useState<number>(2800);
   const [copied, setCopied] = useState<boolean>(false);
+
+  useEffect(() => {
+    setBulletWeight(cartridge.bullet_weight_grains || 150);
+    setBulletLength(
+      cartridge.bullet_length > 0 ? cartridge.bullet_length : Math.round(cartridge.bullet_diameter * 3.4 * 100) / 100
+    );
+  }, [cartridge.id, cartridge.bullet_weight_grains, cartridge.bullet_length, cartridge.bullet_diameter]);
 
   if (!isOpen) return null;
 
@@ -117,11 +125,13 @@ Target precision benchmark: 1.30 <= Sg <= 2.00 for match accuracy.
   };
 
   const handlePrintReport = async () => {
+    const safeName = escapeHtml(cartridge.name);
+    const safeStandard = escapeHtml(cartridge.standard.toUpperCase());
     const printHtml = `<!DOCTYPE html>
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>${cartridge.name} - Gyroscopic Twist Stability Sheet</title>
+    <title>${safeName} - Gyroscopic Twist Stability Sheet</title>
     <style>
       @page { size: letter portrait; margin: 0.5in; }
       body {
@@ -172,11 +182,11 @@ Target precision benchmark: 1.30 <= Sg <= 2.00 for match accuracy.
     <div class="header">
       <div>
         <div class="header-sub">Wildcat Studio Engineering CAD Telemetry</div>
-        <h1 class="header-title">${cartridge.name} &bull; Gyroscopic Twist Stability Sheet</h1>
+        <h1 class="header-title">${safeName} &bull; Gyroscopic Twist Stability Sheet</h1>
       </div>
       <div class="header-date">
         DATE: ${new Date().toLocaleDateString()}<br/>
-        STANDARD: ${cartridge.standard.toUpperCase()}
+        STANDARD: ${safeStandard}
       </div>
     </div>
 

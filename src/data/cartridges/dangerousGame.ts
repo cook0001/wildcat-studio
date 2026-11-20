@@ -678,7 +678,7 @@ export const DANGEROUS_GAME_CARTRIDGES: Record<string, CartridgeSpec> = {
   "318_westley_richards": {
       "id": "318_westley_richards",
       "name": ".318 Westley Richards (.318 Accelerated Express)",
-      "category": "African Express & Dangerous Game",
+      "category": "Dangerous Game & African Express",
       "standard": "CIP",
       "units": "imperial",
       "rim_type": "rimless",
@@ -711,7 +711,7 @@ export const DANGEROUS_GAME_CARTRIDGES: Record<string, CartridgeSpec> = {
   "333_jeffery": {
       "id": "333_jeffery",
       "name": ".333 Jeffery (.333 Rimless Nitro Express)",
-      "category": "African Express & Dangerous Game",
+      "category": "Dangerous Game & African Express",
       "standard": "CIP",
       "units": "imperial",
       "rim_type": "rimless",
@@ -744,7 +744,7 @@ export const DANGEROUS_GAME_CARTRIDGES: Record<string, CartridgeSpec> = {
   "350_rigby_mag": {
       "id": "350_rigby_mag",
       "name": ".350 Rigby Magnum",
-      "category": "African Express & Dangerous Game",
+      "category": "Dangerous Game & African Express",
       "standard": "CIP",
       "units": "imperial",
       "rim_type": "rimless",
@@ -777,7 +777,7 @@ export const DANGEROUS_GAME_CARTRIDGES: Record<string, CartridgeSpec> = {
   "577_snider": {
       "id": "577_snider",
       "name": ".577 Snider (British Enfield Conversion)",
-      "category": "African Express & Dangerous Game",
+      "category": "Dangerous Game & African Express",
       "standard": "CIP",
       "units": "imperial",
       "rim_type": "rimmed",
@@ -810,7 +810,7 @@ export const DANGEROUS_GAME_CARTRIDGES: Record<string, CartridgeSpec> = {
   "369_nitro_express": {
       "id": "369_nitro_express",
       "name": ".369 Nitro Express Purdey",
-      "category": "African Express & Dangerous Game",
+      "category": "Dangerous Game & African Express",
       "standard": "CIP",
       "units": "imperial",
       "rim_type": "rimless",
@@ -843,7 +843,7 @@ export const DANGEROUS_GAME_CARTRIDGES: Record<string, CartridgeSpec> = {
   "400_jeffery_ne": {
       "id": "400_jeffery_ne",
       "name": ".400 Jeffery Nitro Express (3\" Purdey)",
-      "category": "African Express & Dangerous Game",
+      "category": "Dangerous Game & African Express",
       "standard": "CIP",
       "units": "imperial",
       "rim_type": "rimmed",
@@ -876,7 +876,7 @@ export const DANGEROUS_GAME_CARTRIDGES: Record<string, CartridgeSpec> = {
   "400_350_ne": {
       "id": "400_350_ne",
       "name": ".400/350 Nitro Express (Rigby)",
-      "category": "African Express & Dangerous Game",
+      "category": "Dangerous Game & African Express",
       "standard": "CIP",
       "units": "imperial",
       "rim_type": "rimmed",
@@ -909,7 +909,7 @@ export const DANGEROUS_GAME_CARTRIDGES: Record<string, CartridgeSpec> = {
   "400_360_wr": {
       "id": "400_360_wr",
       "name": ".400/360 Westley Richards Nitro Express",
-      "category": "African Express & Dangerous Game",
+      "category": "Dangerous Game & African Express",
       "standard": "CIP",
       "units": "imperial",
       "rim_type": "rimmed",
@@ -942,7 +942,7 @@ export const DANGEROUS_GAME_CARTRIDGES: Record<string, CartridgeSpec> = {
   "425_westley_richards": {
       "id": "425_westley_richards",
       "name": ".425 Westley Richards (Magnificent Rebated)",
-      "category": "African Express & Dangerous Game",
+      "category": "Dangerous Game & African Express",
       "standard": "CIP",
       "units": "imperial",
       "rim_type": "rebated",
@@ -975,7 +975,7 @@ export const DANGEROUS_GAME_CARTRIDGES: Record<string, CartridgeSpec> = {
   "450_no2_ne": {
       "id": "450_no2_ne",
       "name": ".450 No. 2 Nitro Express (3-1/2\")",
-      "category": "African Express & Dangerous Game",
+      "category": "Dangerous Game & African Express",
       "standard": "CIP",
       "units": "imperial",
       "rim_type": "rimmed",
@@ -1008,7 +1008,7 @@ export const DANGEROUS_GAME_CARTRIDGES: Record<string, CartridgeSpec> = {
   "476_westley_richards": {
       "id": "476_westley_richards",
       "name": ".476 Westley Richards (.476 Nitro Express)",
-      "category": "African Express & Dangerous Game",
+      "category": "Dangerous Game & African Express",
       "standard": "CIP",
       "units": "imperial",
       "rim_type": "rimmed",
@@ -1041,7 +1041,7 @@ export const DANGEROUS_GAME_CARTRIDGES: Record<string, CartridgeSpec> = {
   "500_no2_express": {
       "id": "500_no2_express",
       "name": ".500 No. 2 Express (3\" Big Game)",
-      "category": "African Express & Dangerous Game",
+      "category": "Dangerous Game & African Express",
       "standard": "CIP",
       "units": "imperial",
       "rim_type": "rimmed",
@@ -1074,7 +1074,7 @@ export const DANGEROUS_GAME_CARTRIDGES: Record<string, CartridgeSpec> = {
   "500_450_ne": {
       "id": "500_450_ne",
       "name": ".500/450 Nitro Express (Holland & Holland)",
-      "category": "African Express & Dangerous Game",
+      "category": "Dangerous Game & African Express",
       "standard": "CIP",
       "units": "imperial",
       "rim_type": "rimmed",
@@ -1107,7 +1107,7 @@ export const DANGEROUS_GAME_CARTRIDGES: Record<string, CartridgeSpec> = {
   "500_465_ne": {
       "id": "500_465_ne",
       "name": ".500/465 Nitro Express (India Round H&H)",
-      "category": "African Express & Dangerous Game",
+      "category": "Dangerous Game & African Express",
       "standard": "CIP",
       "units": "imperial",
       "rim_type": "rimmed",
@@ -1140,7 +1140,7 @@ export const DANGEROUS_GAME_CARTRIDGES: Record<string, CartridgeSpec> = {
   "470_capstick": {
       "id": "470_capstick",
       "name": ".470 Capstick (A-Square African Express)",
-      "category": "African Express & Dangerous Game",
+      "category": "Dangerous Game & African Express",
       "standard": "SAAMI",
       "units": "imperial",
       "rim_type": "belted",
@@ -1175,7 +1175,7 @@ export const DANGEROUS_GAME_CARTRIDGES: Record<string, CartridgeSpec> = {
   "585_nyati": {
       "id": "585_nyati",
       "name": ".585 Nyati (Ross Seyfried Buffalo Stopper)",
-      "category": "African Express & Dangerous Game",
+      "category": "Dangerous Game & African Express",
       "standard": "Wildcat",
       "units": "imperial",
       "rim_type": "belted",
@@ -1210,7 +1210,7 @@ export const DANGEROUS_GAME_CARTRIDGES: Record<string, CartridgeSpec> = {
   "600_500_ne": {
       "id": "600_500_ne",
       "name": ".600/500 Nitro Express (3\" Westley Richards)",
-      "category": "African Express & Dangerous Game",
+      "category": "Dangerous Game & African Express",
       "standard": "CIP",
       "units": "imperial",
       "rim_type": "rimmed",
@@ -1243,7 +1243,7 @@ export const DANGEROUS_GAME_CARTRIDGES: Record<string, CartridgeSpec> = {
   "475_no2_ne": {
       "id": "475_no2_ne",
       "name": ".475 No. 2 Nitro Express (3-1/2\" Jeffrey)",
-      "category": "African Express & Dangerous Game",
+      "category": "Dangerous Game & African Express",
       "standard": "CIP",
       "units": "imperial",
       "rim_type": "rimmed",
@@ -1276,7 +1276,7 @@ export const DANGEROUS_GAME_CARTRIDGES: Record<string, CartridgeSpec> = {
   "1075x68_mauser": {
     "id": "1075x68_mauser",
     "name": "10.75x68mm Mauser",
-    "category": "Dangerous Game & Nitro Express",
+    "category": "Dangerous Game & African Express",
     "standard": "CIP",
     "units": "imperial",
     "rim_type": "rimless",

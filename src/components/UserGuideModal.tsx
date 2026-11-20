@@ -25,6 +25,9 @@ import {
   FileUp
 } from 'lucide-react';
 import { openExternalLink } from '../utils/openExternal';
+import { CARTRIDGE_PRESET_COUNT } from '../utils/cartridgeHelpers';
+
+const APP_VERSION_LABEL = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.1.0';
 
 interface UserGuideModalProps {
   isOpen: boolean;
@@ -83,10 +86,10 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <div>
             <h3 style={{ fontSize: '18px', color: '#fff', marginBottom: '8px', fontWeight: 700 }}>
-              Welcome to Wildcat Studio (Quick_Design)
+              Welcome to Wildcat Studio
             </h3>
             <p style={{ color: 'var(--text-secondary)', lineHeight: 1.6, fontSize: '13px' }}>
-              <strong>Wildcat Studio</strong> is an industrial-grade computer-aided drafting (CAD) and internal ballistics volumetrics suite designed specifically for custom cartridge wildcatters, custom gunsmiths, reamer manufacturers, and ballistics researchers, incorporating modern real-time vector rendering, 1000-slice Simpson integration, and interactive 3D solid lathe modeling.
+              <strong>Wildcat Studio</strong> is a desktop computer-aided drafting (CAD) and internal ballistics volumetrics suite designed for custom cartridge wildcatters, gunsmiths, reamer manufacturers, and ballistics researchers, incorporating real-time vector rendering, 1,000-slice Simpson integration, and interactive 3D solid lathe modeling.
             </p>
           </div>
 
@@ -132,7 +135,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
               Essential Fast-Start Workflow
             </h4>
             <ol style={{ paddingLeft: '20px', color: 'var(--text-secondary)', fontSize: '13px', lineHeight: 1.7 }}>
-              <li><strong>Open a Parent Case:</strong> Press <kbd style={kbdStyle}>⌘O</kbd> or click <em>Open Database...</em> to pick from 408 verified SAAMI/CIP presets (e.g. .308 Winchester, 6.5 PRC, .30-06).</li>
+              <li><strong>Open a Parent Case:</strong> Press <kbd style={kbdStyle}>⌘O</kbd> or click <em>Open Database...</em> to pick from {CARTRIDGE_PRESET_COUNT} SAAMI, CIP, and custom wildcat presets (e.g. .308 Winchester, 6.5 PRC, .30-06).</li>
               <li><strong>Draft or Edit Dimensions:</strong> Click directly on any dimension number on the blueprint canvas to launch the numeric popover with instant ±0.001" micro-steppers.</li>
               <li><strong>Form a Wildcat:</strong> Press <kbd style={kbdStyle}>⌘W</kbd> to launch the Wildcatting Engine to neck up/down, blow out shoulders to 40° Ackley angles, or truncate body length.</li>
               <li><strong>Inspect Tolerances & Reamer:</strong> Switch Tolerance Mode to <em>Dual Envelope (MMC vs LMC)</em> to verify chamber clearance, or click <em>Chamber Reamer...</em> to generate direct toolmaker orders for PTG, Manson, JGS, or Clymer.</li>
@@ -246,7 +249,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
               fontSize: '11.5px',
               color: 'var(--text-muted)'
             }}>
-              <span><strong>Proprietary Freeware:</strong> Licensed for free personal and gunsmith shop use. View full legal terms in Settings &rarr; <em>Software License & Legal Terms...</em></span>
+              <span><strong>MIT Open-Source License:</strong> Open source under permissive MIT terms. View full license &amp; safety disclaimers in Settings &rarr; <em>Software License &amp; Legal Terms...</em></span>
               <FileText size={13} color="var(--cad-cyan)" />
             </div>
           </div>
@@ -259,12 +262,12 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
       shortTitle: 'Cartridge Database',
       category: 'Fundamentals',
       icon: Search,
-      summary: 'Browsing 408 authentic cartridges across 11 category modules, filter architecture, and custom database management.',
+      summary: `Browsing ${CARTRIDGE_PRESET_COUNT} cartridges across 11 category modules, filter architecture, and custom database management.`,
       content: (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
           <div>
             <h3 style={{ fontSize: '16px', color: '#fff', marginBottom: '8px', fontWeight: 700 }}>
-              408 Authentic Cartridges Across 11 Specialized Modules
+              {CARTRIDGE_PRESET_COUNT} Cartridges Across 11 Specialized Modules
             </h3>
             <p style={{ color: 'var(--text-secondary)', lineHeight: 1.6, fontSize: '13px' }}>
               The database contains full parametric engineering definitions matching official SAAMI (Sporting Arms and Ammunition Manufacturers' Institute) and CIP (Permanent International Commission for the Proof of Small Arms) standards, along with historic proprietary and iconic wildcat designs.
@@ -318,7 +321,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
               <li><strong>Real-time Search:</strong> Instant sub-millisecond keyword matching against cartridge names, designer codes, and caliber designations.</li>
               <li><strong>Caliber Band Chips:</strong> Micro (.172 to .224), Standard (.243 to .308), Magnum (.338 to .375), Ultra-Mag (.416 to .458), and Heavy Bore (.500 to .700).</li>
               <li><strong>My Wildcats Tab:</strong> Dedicated filter showing only user-created custom cartridges stored in your browser's persistent database.</li>
-              <li><strong>Reset All Filters:</strong> When a filter combination yields zero matches, an instant reset button is provided to restore the full 408-record view.</li>
+              <li><strong>Reset All Filters:</strong> When a filter combination yields zero matches, an instant reset button is provided to restore the full {CARTRIDGE_PRESET_COUNT}-record view.</li>
             </ul>
           </div>
 
@@ -367,7 +370,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
             <div style={cardStyle}>
               <strong style={{ color: '#fff' }}>Instant Bounds Enforcement:</strong>
               <p style={{ color: 'var(--text-muted)', marginTop: '4px' }}>
-                Geometry limits are checked in real-time. For example, case length ($L_3$) cannot be shorter than shoulder length ($L_2$), and neck diameter ($G_1$) cannot be smaller than bullet diameter ($G_1$).
+                Geometry limits are checked in real-time. For example, overall case length (L₃) cannot be shorter than the body-shoulder junction (L₂), and outside neck diameter (H₂) must accommodate bullet diameter (G₁).
               </p>
             </div>
             <div style={cardStyle}>
@@ -1389,7 +1392,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
 
             {/* Bottom Version Footer */}
             <div style={{ padding: '12px 14px', borderTop: '1px solid var(--border-color)', fontSize: '11px', color: 'var(--text-muted)' }}>
-              <span>Version 1.0.0</span>
+              <span>Version {APP_VERSION_LABEL}</span>
             </div>
           </div>
 

@@ -1,13 +1,10 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Release Tag Name (e.g. v1.0.1)'
+        description: 'Release tag (optional, defaults to v<package.json.version>, e.g. v1.1.0)'
         required: false
         type: string
 
@@ -19,6 +16,8 @@ jobs:
   pre-release-qc:
     name: Fast Pre-Release Gate (Cost Guard)
     runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.resolve_tag.outputs.release_tag }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -28,6 +27,16 @@ jobs:
         with:
           node-version: 22
           cache: 'npm'
+
+      - name: Resolve Release Tag
+        id: resolve_tag
+        shell: bash
+        run: |
+          TAG="${{ inputs.release_tag }}"
+          if [ -z "$TAG" ]; then
+            TAG="v$(node -p "require('./package.json').version")"
+          fi
+          echo "release_tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Install dependencies
         run: npm ci
@@ -82,7 +91,13 @@ jobs:
           - platform: 'windows-latest'
             args: ''
             targets: ''
+          - platform: 'windows-11-arm'
+            args: '--target aarch64-pc-windows-msvc --bundles nsis'
+            targets: 'aarch64-pc-windows-msvc'
           - platform: 'ubuntu-22.04'
+            args: ''
+            targets: ''
+          - platform: 'ubuntu-24.04-arm'
             args: ''
             targets: ''
 
@@ -108,7 +123,7 @@ jobs:
           workspaces: './src-tauri -> target'
 
       - name: Install Linux build dependencies
-        if: matrix.platform == 'ubuntu-22.04'
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -116,7 +131,8 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             patchelf \
-            libssl-dev
+            libssl-dev \
+            xdg-utils
 
       - name: Install npm dependencies
         run: npm ci
@@ -126,11 +142,10 @@ jobs:
         shell: bash
         run: |
           if [ -f CHANGELOG.md ]; then
-            # Extract content under [Unreleased] or top release section
             awk '/^## /{if (p) exit; p=1; next} p' CHANGELOG.md > release_notes.txt || true
           fi
-          if [ ! -s release_notes.txt ]; then
-            echo "Standalone multi-platform installers for macOS (Universal), Windows, and Linux." > release_notes.txt
+          if [ -z "$(tr -d '[:space:]' < release_notes.txt 2>/dev/null)" ]; then
+            echo "Standalone multi-platform installers for macOS (Universal), Windows (x64 & ARM64), and Linux (x64 & ARM64)." > release_notes.txt
           fi
 
       - name: Build Tauri Application
@@ -138,17 +153,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPIMAGE_EXTRACT_AND_RUN: '1'
         with:
-          tagName: ${{ inputs.release_tag || github.ref_name }}
-          releaseName: 'Wildcat Studio ${{ inputs.release_tag || github.ref_name }}'
-          releaseBody: 'See release assets below for macOS (Universal - Intel & Apple Silicon), Windows, and Linux.'
+          tagName: ${{ needs.pre-release-qc.outputs.release_tag }}
+          releaseName: 'Wildcat Studio ${{ needs.pre-release-qc.outputs.release_tag }}'
+          releaseBody: 'See release assets below for macOS (Universal - Intel & Apple Silicon), Windows (x64 & ARM64), and Linux (x64 & ARM64).'
           releaseDraft: false
           prerelease: false
+          uploadUpdaterJson: false
           args: ${{ matrix.args }}
 
   generate-checksums:
-    name: Generate & Publish SHA256 Checksums
-    needs: [release]
+    name: Generate Updater Manifest & SHA256 Checksums
+    needs: [pre-release-qc, release]
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -156,26 +174,31 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Download Release Assets & Compute SHA256
+      - name: Setup Node.js 22 LTS
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Download Release Assets, Build latest.json & Compute SHA256
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ inputs.release_tag || github.ref_name }}
+          TAG_NAME: ${{ needs.pre-release-qc.outputs.release_tag }}
         run: |
           mkdir -p release-assets
-          gh release download "$TAG_NAME" --dir release-assets || true
+          gh release download "$TAG_NAME" --dir release-assets
+          rm -f release-assets/latest.json release-assets/SHA256SUMS.txt
+          awk '/^## /{if (p) exit; p=1; next} p' CHANGELOG.md > release_notes.txt || true
+          node scripts/generate-updater-manifest.mjs release-assets "${{ github.repository }}" "$TAG_NAME" release_notes.txt release-assets/latest.json
           cd release-assets
-          # Remove any existing checksums file
-          rm -f SHA256SUMS.txt
-          # Calculate checksums for all installer assets
           if compgen -G "*.*" > /dev/null; then
             sha256sum * > SHA256SUMS.txt
-            gh release upload "$TAG_NAME" SHA256SUMS.txt --clobber
-            echo "SHA256SUMS.txt generated and attached to release."
+            gh release upload "$TAG_NAME" latest.json SHA256SUMS.txt --clobber
+            echo "latest.json and SHA256SUMS.txt generated and attached to release."
           fi
 
   notify-store:
     name: Notify ArmsTrader Store
-    needs: [generate-checksums]
+    needs: [pre-release-qc, generate-checksums]
     runs-on: ubuntu-latest
     steps:
       - name: Trigger ArmsTrader Store Direct Sync
@@ -183,7 +206,7 @@ jobs:
           ARMSTRADER_WEBHOOK_KEY: ${{ secrets[format('{0}', 'ARMSTRADER_WEBHOOK_KEY')] }}
           ADMIN_API_KEY: ${{ secrets[format('{0}', 'ADMIN_API_KEY')] }}
           ARMSTRADER_DISPATCH_TOKEN: ${{ secrets[format('{0}', 'ARMSTRADER_DISPATCH_TOKEN')] }}
-          TAG_NAME: ${{ inputs.release_tag || github.ref_name }}
+          TAG_NAME: ${{ needs.pre-release-qc.outputs.release_tag }}
         run: |
           echo "Wildcat Studio release successfully published to GitHub."
           KEY="${ARMSTRADER_WEBHOOK_KEY:-$ADMIN_API_KEY}"
