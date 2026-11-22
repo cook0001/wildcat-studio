@@ -1,16 +1,15 @@
 import * as THREE from 'three';
-import { invoke } from '@tauri-apps/api/core';
 import { getVersion } from '@tauri-apps/api/app';
 import { CartridgeSpec, CARTRIDGE_PRESETS } from '../types/cartridge';
 import { BulletOption, BULLET_OPTIONS } from '../data/bullets';
 import {
-  calculateVolumetricsFrontend,
-  effectiveShoulderLength,
-  generateReamerSpecFrontend,
+  exportQuickloadVol,
+  generateDxf,
+  getBulletRadiusAt,
   getInnerRadiusAt,
   getOuterRadiusAt,
-  isStraightWall,
-} from './volumetrics';
+  resolveBulletProfile,
+} from '../engine';
 
 const AUTO_UPDATE_STORAGE_KEY = 'wildcat_auto_check_updates';
 export const CARTRIDGE_PRESET_COUNT = Object.keys(CARTRIDGE_PRESETS).length;
@@ -88,118 +87,12 @@ export function buildClosedSvgContour(
   return `${d} Z`;
 }
 
-function exportQuickloadVolLineFrontend(spec: CartridgeSpec): string {
-  const vol = calculateVolumetricsFrontend(spec);
-  const boreArea = Math.PI * (spec.bullet_diameter / 2) ** 2 * 0.992;
-  const pressure = spec.max_pressure_bar || 4150;
-  const standardStr = spec.standard === 'CIP' ? 'PiezoCIP' : 'SAAMI';
-
-  return `"${spec.name.replace(/"/g, '')}","${vol.overflow_capacity_grains_h2o.toFixed(1)}","${spec.case_length.toFixed(3)}","${spec.bullet_diameter.toFixed(3)}","${boreArea.toFixed(4)}","${spec.bullet_diameter.toFixed(3)}","${Math.round(pressure)}","${standardStr}","${spec.coal.toFixed(3)}","","","","","",""`;
+export function buildQuickloadVol(spec: CartridgeSpec): string {
+  return exportQuickloadVol(spec);
 }
 
-export async function buildQuickloadVol(spec: CartridgeSpec): Promise<string> {
-  if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
-    try {
-      return await invoke<string>('export_quickload_vol', { spec });
-    } catch {
-      // Fallback to frontend implementation
-    }
-  }
-  return exportQuickloadVolLineFrontend(spec);
-}
-
-function dxfLine(layer: string, x1: number, y1: number, x2: number, y2: number): string {
-  return `0\nLINE\n8\n${layer}\n10\n${x1.toFixed(6)}\n20\n${y1.toFixed(6)}\n30\n0.0\n11\n${x2.toFixed(6)}\n21\n${y2.toFixed(6)}\n31\n0.0\n`;
-}
-
-function dxfSymmetricLine(layer: string, x1: number, r1: number, x2: number, r2: number): string {
-  return dxfLine(layer, x1, r1, x2, r2) + dxfLine(layer, x1, -r1, x2, -r2);
-}
-
-function generateDxfFrontend(spec: CartridgeSpec): string {
-  let out = '0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n0\nENDSEC\n';
-  out += '0\nSECTION\n2\nTABLES\n0\nTABLE\n2\nLAYER\n70\n5\n';
-  out += '0\nLAYER\n2\nOUTER_CASE\n70\n0\n62\n2\n6\nCONTINUOUS\n';
-  out += '0\nLAYER\n2\nINNER_WALL\n70\n0\n62\n3\n6\nCONTINUOUS\n';
-  out += '0\nLAYER\n2\nBULLET\n70\n0\n62\n1\n6\nCONTINUOUS\n';
-  out += '0\nLAYER\n2\nCENTERLINE\n70\n0\n62\n8\n6\nCONTINUOUS\n';
-  out += '0\nLAYER\n2\nCHAMBER\n70\n0\n62\n4\n6\nCONTINUOUS\n';
-  out += '0\nENDTAB\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n';
-
-  out += dxfLine('CENTERLINE', -0.1, 0, spec.coal + 0.1, 0);
-
-  const steps = 120;
-  const dz = spec.case_length / steps;
-  let prevZ = 0;
-  let prevR = getOuterRadiusAt(spec, 0);
-  out += dxfLine('OUTER_CASE', 0, -prevR, 0, prevR);
-
-  for (let i = 1; i <= steps; i++) {
-    const z = i * dz;
-    const r = getOuterRadiusAt(spec, z);
-    out += dxfSymmetricLine('OUTER_CASE', prevZ, prevR, z, r);
-    prevZ = z;
-    prevR = r;
-  }
-
-  const rInnerMouth = Math.max(0, spec.neck_diameter_mouth / 2 - spec.neck_wall_thickness);
-  out += dxfSymmetricLine('OUTER_CASE', spec.case_length, prevR, spec.case_length, rInnerMouth);
-
-  const zWeb = spec.web_thickness;
-  let prevZi = zWeb;
-  let prevRi = getInnerRadiusAt(spec, zWeb);
-  out += dxfLine('INNER_WALL', zWeb, -prevRi, zWeb, prevRi);
-
-  const innerSteps = 100;
-  const dzi = Math.max(0.001, spec.case_length - zWeb) / innerSteps;
-  for (let i = 1; i <= innerSteps; i++) {
-    const z = zWeb + i * dzi;
-    const r = getInnerRadiusAt(spec, z);
-    out += dxfSymmetricLine('INNER_WALL', prevZi, prevRi, z, r);
-    prevZi = z;
-    prevRi = r;
-  }
-
-  const reamer = generateReamerSpecFrontend(spec);
-  const rChBase = reamer.chamber_base_dia / 2;
-  const rChSh = reamer.chamber_shoulder_dia / 2;
-  const rChNeck = reamer.chamber_neck_dia / 2;
-  const rFb = reamer.freebore_dia / 2;
-  const rBore = reamer.pilot_diameter / 2;
-
-  if (isStraightWall(spec)) {
-    out += dxfSymmetricLine('CHAMBER', 0, rChBase, reamer.chamber_length, rChNeck);
-  } else {
-    const zShEnd = spec.body_length + effectiveShoulderLength(spec);
-    out += dxfSymmetricLine('CHAMBER', 0, rChBase, spec.body_length, rChSh);
-    out += dxfSymmetricLine('CHAMBER', spec.body_length, rChSh, zShEnd, rChNeck);
-    out += dxfSymmetricLine('CHAMBER', zShEnd, rChNeck, reamer.chamber_length, rChNeck);
-  }
-  const zFbEnd = reamer.chamber_length + reamer.freebore_length;
-  const leadeLen = Math.max(0, rFb - rBore) / Math.max(0.001, Math.tan((reamer.leade_angle_deg * Math.PI) / 180));
-  out += dxfSymmetricLine('CHAMBER', reamer.chamber_length, rChNeck, reamer.chamber_length, rFb);
-  out += dxfSymmetricLine('CHAMBER', reamer.chamber_length, rFb, zFbEnd, rFb);
-  out += dxfSymmetricLine('CHAMBER', zFbEnd, rFb, zFbEnd + leadeLen, rBore);
-
-  const rBullet = spec.bullet_diameter / 2;
-  const zBulletBase = spec.coal - spec.bullet_length;
-  out += dxfLine('BULLET', zBulletBase, -rBullet, zBulletBase, rBullet);
-  out += dxfSymmetricLine('BULLET', zBulletBase, rBullet, spec.case_length, rBullet);
-  out += dxfSymmetricLine('BULLET', spec.case_length, rBullet, spec.coal, 0);
-
-  out += '0\nENDSEC\n0\nEOF\n';
-  return out;
-}
-
-export async function buildDxfDrawing(spec: CartridgeSpec): Promise<string> {
-  if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
-    try {
-      return await invoke<string>('export_dxf', { spec });
-    } catch {
-      // Fallback to frontend DXF builder
-    }
-  }
-  return generateDxfFrontend(spec);
+export function buildDxfDrawing(spec: CartridgeSpec): string {
+  return generateDxf(spec);
 }
 
 export function buildCaseAndBulletGeometries(
@@ -254,26 +147,15 @@ export function buildCaseAndBulletGeometries(
   const caseGeo = new THREE.LatheGeometry(casePts, 64, 0, phiLength);
   caseGeo.computeVertexNormals();
 
-  const bDia = cartridge.bullet_diameter;
-  const rBullet = bDia / 2;
+  // Parametric bullet profile (exact boat-tail frustum, bearing surface, ogive, and meplat)
+  const bulletProfile = resolveBulletProfile(cartridge);
   const zBulletBase = cartridge.coal - cartridge.bullet_length;
-  const boatTailLen = bDia * 0.45;
-  const ogiveLen = Math.max(0.1, cartridge.bullet_length * 0.5);
-  const zOgiveStart = cartridge.coal - ogiveLen;
-  const bulletPts: THREE.Vector2[] = [
-    new THREE.Vector2(0, zBulletBase + zOffset),
-    new THREE.Vector2(rBullet * 0.85, zBulletBase + zOffset),
-    new THREE.Vector2(rBullet, zBulletBase + boatTailLen + zOffset),
-    new THREE.Vector2(rBullet, zOgiveStart + zOffset),
-  ];
-
-  const ogiveSteps = 32;
-  for (let i = 1; i <= ogiveSteps; i++) {
-    const t = i / ogiveSteps;
-    const z = zOgiveStart + t * ogiveLen;
-    const radiusFactor = Math.pow(Math.max(0, 1 - t * t), 0.72);
-    const r = Math.max(0.004, rBullet * radiusFactor);
-    bulletPts.push(new THREE.Vector2(r, z + zOffset));
+  const bulletPts: THREE.Vector2[] = [new THREE.Vector2(0, zBulletBase + zOffset)];
+  const bulletSteps = 56;
+  for (let i = 0; i <= bulletSteps; i++) {
+    const x = (i / bulletSteps) * cartridge.bullet_length;
+    const r = Math.max(0.002, getBulletRadiusAt(cartridge, x, bulletProfile));
+    bulletPts.push(new THREE.Vector2(r, zBulletBase + x + zOffset));
   }
   bulletPts.push(new THREE.Vector2(0, cartridge.coal + zOffset));
 

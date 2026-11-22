@@ -9,7 +9,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "typecheck": "tsc --noEmit",
-    "qc": "npm run build",
+    "test": "vitest run",
+    "qc": "npm run typecheck && npm test && npm run build",
     "verify": "bash scripts/verify.sh",
     "preview": "vite preview",
     "tauri": "tauri"
@@ -33,6 +34,7 @@
     "@vitejs/plugin-react": "^6.3.0",
     "terser": "^5.51.3",
     "typescript": "~7.0.2",
-    "vite": "^8.3.2"
+    "vite": "^8.3.2",
+    "vitest": "^5.1.1"
   }
 }

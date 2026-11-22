@@ -1,43 +1,3 @@
-pub mod geometry;
-pub mod formats;
-
-use geometry::cartridge::{CartridgeSpec, ReamerSpec, SetbackResult, VolumetricResult};
-use geometry::volumetrics::calculate_volumetrics;
-use geometry::reamer::generate_reamer_spec;
-use geometry::setback::analyze_chamber_setback;
-use formats::vol_interchange::{export_to_quickload_vol_line, parse_quickload_vol_line};
-use formats::dxf::generate_dxf_string;
-
-#[tauri::command]
-fn calculate_cartridge_volumetrics(spec: CartridgeSpec) -> VolumetricResult {
-    calculate_volumetrics(&spec)
-}
-
-#[tauri::command]
-fn calculate_chamber_reamer(spec: CartridgeSpec) -> ReamerSpec {
-    generate_reamer_spec(&spec)
-}
-
-#[tauri::command]
-fn analyze_rechamber_setback(old_spec: CartridgeSpec, new_spec: CartridgeSpec) -> SetbackResult {
-    analyze_chamber_setback(&old_spec, &new_spec)
-}
-
-#[tauri::command]
-fn export_quickload_vol(spec: CartridgeSpec) -> String {
-    export_to_quickload_vol_line(&spec)
-}
-
-#[tauri::command]
-fn parse_quickload_vol(line: String) -> Option<CartridgeSpec> {
-    parse_quickload_vol_line(&line)
-}
-
-#[tauri::command]
-fn export_dxf(spec: CartridgeSpec) -> String {
-    generate_dxf_string(&spec)
-}
-
 use std::io::Write;
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -51,7 +11,14 @@ fn next_temp_file_path(prefix: &str, ext: &str) -> std::path::PathBuf {
         .as_millis();
     let seq = TEMP_FILE_SEQ.fetch_add(1, Ordering::Relaxed);
     let pid = std::process::id();
-    std::env::temp_dir().join(format!("{}_{}_{}_{}.{}", prefix, timestamp, pid, seq, ext))
+    std::env::temp_dir().join(format!("{prefix}_{timestamp}_{pid}_{seq}.{ext}"))
+}
+
+fn sanitize_filename_stem(title: &str) -> String {
+    title
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .collect()
 }
 
 fn open_with_system_viewer(file_path: &std::path::Path, context_label: &str) -> Result<(), String> {
@@ -60,7 +27,7 @@ fn open_with_system_viewer(file_path: &std::path::Path, context_label: &str) -> 
         Command::new("open")
             .arg(file_path)
             .spawn()
-            .map_err(|e| format!("Failed to launch {}: {}", context_label, e))?;
+            .map_err(|e| format!("Failed to launch {context_label}: {e}"))?;
     }
 
     #[cfg(target_os = "windows")]
@@ -69,7 +36,7 @@ fn open_with_system_viewer(file_path: &std::path::Path, context_label: &str) -> 
         Command::new("cmd")
             .args(["/C", "start", "", &path_str])
             .spawn()
-            .map_err(|e| format!("Failed to launch {}: {}", context_label, e))?;
+            .map_err(|e| format!("Failed to launch {context_label}: {e}"))?;
     }
 
     #[cfg(target_os = "linux")]
@@ -77,7 +44,7 @@ fn open_with_system_viewer(file_path: &std::path::Path, context_label: &str) -> 
         Command::new("xdg-open")
             .arg(file_path)
             .spawn()
-            .map_err(|e| format!("Failed to launch {}: {}", context_label, e))?;
+            .map_err(|e| format!("Failed to launch {context_label}: {e}"))?;
     }
 
     Ok(())
@@ -113,21 +80,23 @@ fn compile_typst_pdf(typst_source: String) -> Result<Vec<u8>, String> {
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
-        .map_err(|e| format!("Failed to spawn typst binary (not found): {}", e))?;
+        .map_err(|e| format!("Failed to spawn typst binary: {e}"))?;
 
     if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(typst_source.as_bytes())
-            .map_err(|e| format!("Failed to write to typst stdin: {}", e))?;
+        stdin
+            .write_all(typst_source.as_bytes())
+            .map_err(|e| format!("Failed to write to typst stdin: {e}"))?;
     }
 
-    let output = child.wait_with_output()
-        .map_err(|e| format!("Typst execution failed: {}", e))?;
+    let output = child
+        .wait_with_output()
+        .map_err(|e| format!("Typst execution failed: {e}"))?;
 
     if output.status.success() {
         Ok(output.stdout)
     } else {
         let err_msg = String::from_utf8_lossy(&output.stderr);
-        Err(format!("Typst compilation error: {}", err_msg))
+        Err(format!("Typst compilation error: {err_msg}"))
     }
 }
 
@@ -135,18 +104,16 @@ fn compile_typst_pdf(typst_source: String) -> Result<Vec<u8>, String> {
 fn trigger_system_print(html_content: String, _title: String) -> Result<String, String> {
     let file_path = next_temp_file_path("wildcat_print", "html");
 
-    // Ensure auto-print script is present so the native system print sheet appears immediately
-    let final_html = if !html_content.contains("window.print()") {
-        format!(
-            "{}\n<script>window.addEventListener('load', function() {{ setTimeout(function() {{ window.focus(); window.print(); }}, 350); }});</script>",
-            html_content
-        )
-    } else {
+    let final_html = if html_content.contains("window.print()") {
         html_content
+    } else {
+        format!(
+            "{html_content}\n<script>window.addEventListener('load', function() {{ setTimeout(function() {{ window.focus(); window.print(); }}, 350); }});</script>"
+        )
     };
 
     std::fs::write(&file_path, final_html)
-        .map_err(|e| format!("Failed to write temporary print file: {}", e))?;
+        .map_err(|e| format!("Failed to write temporary print file: {e}"))?;
 
     open_with_system_viewer(&file_path, "system print viewer")?;
     Ok(file_path.to_string_lossy().to_string())
@@ -154,15 +121,12 @@ fn trigger_system_print(html_content: String, _title: String) -> Result<String, 
 
 #[tauri::command]
 fn trigger_system_pdf_print(pdf_data: Vec<u8>, title: String) -> Result<String, String> {
-    let clean_title: String = title
-        .chars()
-        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
-        .collect();
-    let prefix = format!("wildcat_{}", clean_title);
+    let clean_title = sanitize_filename_stem(&title);
+    let prefix = format!("wildcat_{clean_title}");
     let file_path = next_temp_file_path(&prefix, "pdf");
 
     std::fs::write(&file_path, pdf_data)
-        .map_err(|e| format!("Failed to write temporary PDF: {}", e))?;
+        .map_err(|e| format!("Failed to write temporary PDF: {e}"))?;
 
     open_with_system_viewer(&file_path, "PDF viewer")?;
     Ok(file_path.to_string_lossy().to_string())
@@ -196,12 +160,18 @@ pub fn run() {
     let initial_file = std::env::args().nth(1).and_then(|arg| {
         let p = std::path::Path::new(&arg);
         if p.is_file() {
-            let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("Cartridge File").to_string();
-            std::fs::read_to_string(p).ok().map(|content| OpenedFilePayload {
-                name,
-                path: arg,
-                content,
-            })
+            let name = p
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("Cartridge File")
+                .to_string();
+            std::fs::read_to_string(p)
+                .ok()
+                .map(|content| OpenedFilePayload {
+                    name,
+                    path: arg,
+                    content,
+                })
         } else {
             None
         }
@@ -216,12 +186,6 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .invoke_handler(tauri::generate_handler![
-            calculate_cartridge_volumetrics,
-            calculate_chamber_reamer,
-            analyze_rechamber_setback,
-            export_quickload_vol,
-            parse_quickload_vol,
-            export_dxf,
             check_typst_available,
             compile_typst_pdf,
             trigger_system_print,
@@ -238,7 +202,11 @@ pub fn run() {
             for url in urls {
                 if let Ok(file_path) = url.to_file_path() {
                     let path_str = file_path.to_string_lossy().to_string();
-                    let name = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("Cartridge File").to_string();
+                    let name = file_path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("Cartridge File")
+                        .to_string();
                     if let Ok(content) = std::fs::read_to_string(&file_path) {
                         let payload = OpenedFilePayload {
                             name,
@@ -256,4 +224,23 @@ pub fn run() {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_temp_file_paths_are_unique_and_have_extension() {
+        let p1 = next_temp_file_path("wildcat_test", "pdf");
+        let p2 = next_temp_file_path("wildcat_test", "pdf");
+        assert_ne!(p1, p2);
+        assert_eq!(p1.extension().and_then(|e| e.to_str()), Some("pdf"));
+    }
+
+    #[test]
+    fn test_sanitize_filename_stem_strips_path_separators() {
+        assert_eq!(sanitize_filename_stem(".308 Win / 7.62 NATO"), "_308_Win___7_62_NATO");
+        assert_eq!(sanitize_filename_stem("6.5_CM-Reamer"), "6_5_CM-Reamer");
+    }
 }

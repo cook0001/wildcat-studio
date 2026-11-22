@@ -3,6 +3,37 @@
 export type RimType = "rimless" | "rimmed" | "semi_rimmed" | "belted" | "rebated" | "rimfire";
 export type DimensionStandard = "SAAMI" | "CIP" | "Wildcat";
 export type UnitSystem = "imperial" | "metric";
+export type BulletOgiveType = "tangent" | "secant" | "hybrid" | "round_nose" | "flat_nose" | "spitzer";
+export type BulletMaterial = "lead_core" | "monolithic_copper" | "solid_brass" | "polymer_tip";
+
+export interface BulletProfile {
+  base_type: "flat_base" | "boat_tail";
+  boat_tail_length_in: number;
+  boat_tail_base_dia_in: number;
+  ogive_type: BulletOgiveType;
+  ogive_radius_calibers: number;
+  meplat_diameter_in: number;
+  bearing_surface_length_in?: number;
+  material: BulletMaterial;
+  plastic_tip_length_in: number;
+}
+
+export interface ChamberOverrides {
+  bore_diameter?: number;
+  groove_diameter?: number;
+  num_grooves?: number;
+  groove_width_ratio?: number;
+  base_clearance?: number;
+  shoulder_clearance?: number;
+  neck_clearance?: number;
+  length_clearance?: number;
+  rim_dia_clearance?: number;
+  rim_depth_clearance?: number;
+  headspace_clearance?: number;
+  freebore_diameter?: number;
+  freebore_length?: number;
+  leade_angle_deg?: number;
+}
 
 export interface CartridgeSpec {
   id: string;
@@ -38,6 +69,15 @@ export interface CartridgeSpec {
   max_pressure_bar: number;
   belt_diameter?: number;          // Belted cases
   belt_width?: number;             // Belted cases
+  shoulder_body_fillet_r?: number; // R1 body-to-shoulder fillet radius (in)
+  shoulder_neck_fillet_r?: number; // R2 shoulder-to-neck fillet radius (in)
+  datum_diameter?: number;         // SAAMI/CIP headspace datum circle diameter (in)
+  bore_diameter?: number;          // Land-to-land bore diameter (in)
+  groove_diameter?: number;        // Groove-to-groove diameter (in)
+  freebore_length?: number;        // Chamber freebore length (in)
+  barrel_length_in?: number;       // Barrel length for expansion ratio (default 24")
+  bullet_profile?: Partial<BulletProfile>;
+  chamber_overrides?: ChamberOverrides;
   designer?: string;               // Wildcat cartridge designer / author
   parent_case?: string;            // Parent donor case
   notes?: string;                  // Engineering notes / design rationale
@@ -50,10 +90,16 @@ export interface VolumetricResult {
   bullet_displacement_cm3: number;
   usable_capacity_grains_h2o: number;
   usable_capacity_cm3: number;
+  brass_case_weight_grains: number;
+  brass_case_weight_grams: number;
+  rifled_bore_area_sq_in: number;
+  rifled_bore_area_mm2: number;
+  barrel_length_in: number;
   sectional_density: number;
   expansion_ratio_24in: number;
   form_factor_est: number;
   g1_bc_est: number;
+  g7_bc_est: number;
 }
 
 export interface ReamerSpec {
@@ -67,6 +113,29 @@ export interface ReamerSpec {
   freebore_length: number;
   leade_angle_deg: number;
   pilot_diameter: number;
+  groove_diameter: number;
+  headspace_clearance: number;
+  rifled_bore_area_sq_in: number;
+}
+
+export interface ChamberCollisionIssue {
+  severity: "error" | "warning";
+  zone: string;
+  message: string;
+}
+
+export interface ChamberCollisionReport {
+  has_interference: boolean;
+  min_radial_clearance_in: number;
+  min_clearance_z_in: number;
+  neck_clearance_in: number;
+  base_clearance_in: number;
+  shoulder_clearance_in: number;
+  mouth_clearance_in: number;
+  jam_coal_in: number;
+  jump_to_lands_in: number;
+  cbto_in: number;
+  issues: ChamberCollisionIssue[];
 }
 
 export interface SetbackResult {
@@ -89,12 +158,27 @@ export interface HeadspaceGaugeSpec {
   tolerance_inches: number;
 }
 
+export interface StabilityOptions {
+  temperatureF?: number;
+  pressureInHg?: number;
+  plasticTipLengthIn?: number;
+  material?: BulletMaterial;
+  tofSeconds?: number;
+  twistDirection?: 'right' | 'left';
+}
+
 export interface StabilityResult {
   bullet_mass_grains: number;
   bullet_length_inches: number;
   twist_rate_inches: number;
   velocity_fps: number;
+  sg_stp: number;
   sg: number;
+  velocity_factor: number;
+  atmospheric_factor: number;
+  spin_rpm: number;
+  spin_drift_inches: number;
+  tof_seconds: number;
   status: 'unstable' | 'marginal' | 'stable' | 'over_stabilized';
   optimal_twist_inches: number;
   description: string;

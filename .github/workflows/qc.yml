@@ -33,6 +33,9 @@ jobs:
       - name: TypeScript Typecheck Verification
         run: npm run typecheck
 
+      - name: Engine & Golden-Fixture Unit Tests
+        run: npm test
+
       - name: Production Bundle & Build Verification
         run: npm run build
 
