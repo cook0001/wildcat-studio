@@ -15,10 +15,10 @@ import { openExternalLink } from '../../utils/openExternal';
 interface LicenseModalProps {
   isOpen: boolean;
   onClose: () => void;
-  initialTab?: 'eula' | 'cleanroom' | 'safety' | 'opensource';
+  initialTab?: 'eula' | 'algorithms' | 'safety' | 'opensource';
 }
 
-type TabKey = 'eula' | 'cleanroom' | 'safety' | 'opensource';
+type TabKey = 'eula' | 'algorithms' | 'safety' | 'opensource';
 
 const APP_VER = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.1.0';
 
@@ -45,8 +45,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-CLEANROOM IMPLEMENTATION & MATHEMATICAL ATTRIBUTION
-All mathematical and ballistic calculations implemented in Wildcat Studio are independent, cleanroom derivations:
+MATHEMATICAL IMPLEMENTATION & ATTRIBUTION
+All mathematical and ballistic calculations implemented in Wildcat Studio are independent derivations:
 - Volumetric Integration: Liquid grain water capacity (gr H2O) is calculated via 1,000-slice Simpson composite numerical integration of the interior cartridge solid of revolution.
 - Gyroscopic Stability: Projectile stability calculations implement the Don Miller twist rule (Sg) with standard temperature and barometric atmospheric pressure corrections.
 - Spin Drift: Aerodynamic drift formulations implement Bryan Litz empirical point-mass projectile deflection equations.
@@ -169,7 +169,7 @@ export const LicenseModal: React.FC<LicenseModalProps> = ({
                 </span>
               </div>
               <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
-                Wildcat Studio v{APP_VER} • Cleanroom Precision Ballistics & Cartridge CAD
+                Wildcat Studio v{APP_VER} • Ballistics & Cartridge CAD
               </p>
             </div>
           </div>
@@ -205,7 +205,7 @@ export const LicenseModal: React.FC<LicenseModalProps> = ({
         }}>
           {[
             { key: 'eula', label: 'MIT License', icon: FileText },
-            { key: 'cleanroom', label: 'Cleanroom & Algorithms', icon: Code2 },
+            { key: 'algorithms', label: 'Algorithms & Formulas', icon: Code2 },
             { key: 'safety', label: 'Safety & Liability Advisory', icon: AlertTriangle },
             { key: 'opensource', label: 'Open Source Notices', icon: ShieldCheck },
           ].map((tab) => {
@@ -297,7 +297,7 @@ export const LicenseModal: React.FC<LicenseModalProps> = ({
             </>
           )}
 
-          {activeTab === 'cleanroom' && (
+          {activeTab === 'algorithms' && (
             <>
               <div style={{
                 background: 'rgba(59, 130, 246, 0.08)',
@@ -307,9 +307,9 @@ export const LicenseModal: React.FC<LicenseModalProps> = ({
                 color: '#e2e8f0'
               }}>
                 <strong style={{ color: '#60a5fa', display: 'block', marginBottom: '4px' }}>
-                  Cleanroom Mathematical Formulation
+                  Mathematical Formulation
                 </strong>
-                Every algorithmic calculation in Wildcat Studio is an independent, cleanroom implementation based on published peer-reviewed ballistic physics and open engineering standards.
+                Every calculation in Wildcat Studio is an independent implementation based on published ballistic physics and open engineering standards.
               </div>
 
               <div>

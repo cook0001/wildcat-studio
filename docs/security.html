@@ -67,8 +67,11 @@
       <div class="code-block">
         <span class="label">macOS / Linux Verification</span>
         <pre>shasum -a 256 -c SHA256SUMS.txt
-# Or verify a single file directly:
-shasum -a 256 Wildcat.Studio_*_universal.dmg</pre>
+# Verify a single package:
+shasum -a 256 Wildcat.Studio_*_universal.dmg
+# Verify macOS Developer ID signature and notarization:
+codesign --verify --deep --strict "/Applications/Wildcat Studio.app"
+spctl --assess --type execute --verbose "/Applications/Wildcat Studio.app"</pre>
       </div>
 
       <div class="code-block">

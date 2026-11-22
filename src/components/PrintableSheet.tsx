@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useMemo, useRef } from 'react';
 import { CartridgeSpec } from '../types/cartridge';
 import { calculateVolumetrics, calculateReamerSpecs } from '../utils/volumetrics';
 import { openStandalonePrintWindow } from '../utils/fileExport';
@@ -20,10 +20,16 @@ export const PrintableSheet: React.FC<PrintableSheetProps> = ({
 }) => {
   const printRef = useRef<HTMLDivElement>(null);
 
-  if (!isOpen) return null;
+  const volumetrics = useMemo(
+    () => (isOpen ? calculateVolumetrics(cartridge) : null),
+    [isOpen, cartridge]
+  );
+  const reamer = useMemo(
+    () => (isOpen ? calculateReamerSpecs(cartridge) : null),
+    [isOpen, cartridge]
+  );
 
-  const volumetrics = calculateVolumetrics(cartridge);
-  const reamer = calculateReamerSpecs(cartridge);
+  if (!isOpen || !volumetrics || !reamer) return null;
 
   const fmt = (valInches: number, precision = 3) => {
     if (isMetric) {

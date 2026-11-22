@@ -70,7 +70,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose, onOpenL
           Wildcat Studio
         </h3>
         <p style={{ fontSize: '12px', color: 'var(--cad-cyan)', fontFamily: 'var(--font-mono)', marginBottom: '16px' }}>
-          Version {version} (Cleanroom CAD Suite)
+          Version {version}
         </p>
 
         <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: '20px' }}>
@@ -232,7 +232,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose, onOpenL
             gap: '6px'
           }}>
             <div>
-              <strong style={{ color: '#fff' }}>MIT Open-Source License:</strong> Cleanroom implementation. All dimensional formulas derived from public domain SAAMI/CIP technical drawings and Don Miller ballistic equations.
+              <strong style={{ color: '#fff' }}>MIT Open-Source License:</strong> Independent implementation. Dimensional formulas are derived from public SAAMI/CIP technical drawings and Don Miller stability equations.
             </div>
             {onOpenLicense && (
               <button

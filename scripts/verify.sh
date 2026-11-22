@@ -1,11 +1,6 @@
 #!/usr/bin/env bash
-# ==============================================================================
-# Wildcat Studio — Local Pre-Flight Verification Pipeline
-# 
-# Runs the full test & quality ladder locally before committing or pushing.
-# Guarantees that GitHub Actions will succeed on the first attempt without
-# burning failed CI runner minutes.
-# ==============================================================================
+# Wildcat Studio local verification pipeline.
+# Runs version sync, frontend typecheck/build, Rust check/clippy/test, and CSS prefix checks.
 
 set -eo pipefail
 
@@ -21,9 +16,7 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cd "$ROOT_DIR"
 
-echo -e "${BOLD}${CYAN}====================================================================${NC}"
-echo -e "${BOLD}${CYAN}  Wildcat Studio — Local Pre-Flight Verification Pipeline${NC}"
-echo -e "${BOLD}${CYAN}====================================================================${NC}\n"
+echo -e "${BOLD}${CYAN}Wildcat Studio — Local Verification${NC}\n"
 
 START_TIME=$(date +%s)
 
@@ -90,7 +83,4 @@ fi
 END_TIME=$(date +%s)
 DURATION=$((END_TIME - START_TIME))
 
-echo -e "${BOLD}${GREEN}====================================================================${NC}"
-echo -e "${BOLD}${GREEN}  ALL PRE-FLIGHT CHECKS PASSED SUCCESSFULLY (${DURATION}s)${NC}"
-echo -e "${BOLD}${GREEN}  The codebase is in condition for GitHub Actions.${NC}"
-echo -e "${BOLD}${GREEN}====================================================================${NC}"
+echo -e "${BOLD}${GREEN}All checks passed (${DURATION}s).${NC}"

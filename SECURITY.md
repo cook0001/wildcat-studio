@@ -44,7 +44,7 @@ Wildcat Studio operates strictly as an offline, zero-telemetry desktop applicati
 
 - **Mathematical & Telemetry Accuracy**: Consistency of the 1,000-slice Simpson composite volumetrics solver, chamber reamer tolerance calculations, and live clearance callouts.
 - **Export Sanitization**: Escaping and safe generation of printable HTML/Typst templates, AutoCAD DXF vectors, QuickLOAD VOL, and binary STL meshes.
-- **Binary Integrity**: Native Mach-O, PE, and ELF binaries built in GitHub Actions with `opt-level = 3`, `lto = true`, and symbol stripping.
+- **Binary Integrity**: Native Mach-O, PE, and ELF binaries built in GitHub Actions with `opt-level = 3`, `lto = true`, and symbol stripping. macOS releases support Developer ID code signing with Hardened Runtime and Apple notarization.
 - **Data Privacy**: All custom cartridge records and screen calibration DPI data reside in local client storage without external telemetry.
 
 ---
@@ -62,6 +62,10 @@ shasum -a 256 -c SHA256SUMS.txt
 
 # Or check an individual package
 shasum -a 256 Wildcat.Studio_1.1.1_universal.dmg
+
+# Verify macOS Developer ID signature and notarization ticket
+codesign --verify --deep --strict "/Applications/Wildcat Studio.app"
+spctl --assess --type execute --verbose "/Applications/Wildcat Studio.app"
 ```
 
 #### Windows (PowerShell)
@@ -75,4 +79,4 @@ certutil -hashfile .\Wildcat.Studio_1.1.1_x64-setup.exe SHA256
 
 ---
 
-*Copyright © 2026 Wildcat Studio. All rights reserved.*
+Released under the [MIT License](LICENSE). Copyright (c) 2026 Daniel Cook / Wildcat Studio.

@@ -81,7 +81,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
       shortTitle: 'System Overview',
       category: 'Fundamentals',
       icon: BookOpen,
-      summary: 'High-performance cleanroom CAD suite layout, navigation workflows, and UI architecture.',
+      summary: 'Workspace layout, navigation workflows, and drafting controls.',
       content: (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <div>
@@ -153,7 +153,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
               <ExternalLink size={14} /> ArmoryVault & Firearms Ecosystem Integration
             </h4>
             <p style={{ color: 'var(--text-secondary)', fontSize: '12px', lineHeight: 1.6, marginBottom: '10px' }}>
-              Wildcat Studio seamlessly complements the wider shooting sports and firearms management ecosystem:
+              Wildcat Studio pairs with companion tools in the ArmsTrader / ArmoryVault suite:
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '8px', fontSize: '12px' }}>
               <a
@@ -258,7 +258,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
     },
     {
       id: 'cartridge-database',
-      title: '2. Encyclopedic Cartridge Database (⌘O)',
+      title: '2. Cartridge Database (⌘O)',
       shortTitle: 'Cartridge Database',
       category: 'Fundamentals',
       icon: Search,
@@ -318,7 +318,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
               Database Search & Filter Navigation
             </h4>
             <ul style={{ paddingLeft: '18px', color: 'var(--text-secondary)', fontSize: '12.5px', lineHeight: 1.6 }}>
-              <li><strong>Real-time Search:</strong> Instant sub-millisecond keyword matching against cartridge names, designer codes, and caliber designations.</li>
+              <li><strong>Real-time Search:</strong> Instant keyword matching against cartridge names, designer codes, and caliber designations.</li>
               <li><strong>Caliber Band Chips:</strong> Micro (.172 to .224), Standard (.243 to .308), Magnum (.338 to .375), Ultra-Mag (.416 to .458), and Heavy Bore (.500 to .700).</li>
               <li><strong>My Wildcats Tab:</strong> Dedicated filter showing only user-created custom cartridges stored in your browser's persistent database.</li>
               <li><strong>Reset All Filters:</strong> When a filter combination yields zero matches, an instant reset button is provided to restore the full {CARTRIDGE_PRESET_COUNT}-record view.</li>
@@ -1060,7 +1060,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
             <div style={cardStyle}>
               <strong style={{ color: '#3fb950' }}>Cross-App Interchange with LoadBench:</strong>
               <p style={{ color: 'var(--text-muted)', marginTop: '4px' }}>
-                Wildcat Studio seamlessly opens LoadBench recipe files (<code>.loadbench</code> / <code>.ldb</code>), extracting cartridge dimensions, bullet geometry, and powder capacity automatically.
+                Wildcat Studio opens LoadBench recipe files (<code>.loadbench</code> / <code>.ldb</code>) directly, extracting cartridge dimensions, bullet geometry, and powder capacity automatically.
               </p>
             </div>
             <div style={cardStyle}>
@@ -1078,7 +1078,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
           </div>
 
           <div style={{ background: 'rgba(0, 210, 255, 0.04)', padding: '12px', borderRadius: '6px', fontSize: '12.5px', color: 'var(--text-secondary)' }}>
-            <strong>Cold-Start & Runtime Handling:</strong> Whether the application is already running or being launched from a cold start by double-clicking a file, native Tauri event listeners guarantee the file is queued and rendered seamlessly.
+            <strong>Cold-Start & Runtime Handling:</strong> Whether the application is already running or launched from a cold start by double-clicking a file, native Tauri event listeners queue and open the file automatically.
           </div>
         </div>
       )
@@ -1270,7 +1270,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                 Wildcat Studio User Guide & Technical Manual
               </h2>
               <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: 0, marginTop: '2px' }}>
-                Complete cleanroom CAD engineering, chamber reamer design, and volumetrics reference
+                Cartridge drafting, chamber reamer design, and volumetrics reference
               </p>
             </div>
           </div>

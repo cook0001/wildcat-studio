@@ -73,38 +73,3 @@ export function generateCustomCartridgeId(name: string): string {
   const timestamp = Date.now().toString(36);
   return `wildcat_${sanitized || 'custom'}_${timestamp}`;
 }
-
-/**
- * Export all custom cartridges as a JSON string for backup/sharing.
- */
-export function exportCustomCartridgesJson(): string {
-  const existing = loadCustomCartridges();
-  return JSON.stringify(existing, null, 2);
-}
-
-/**
- * Import and merge custom cartridges from a JSON string.
- * Returns the number of successfully imported cartridges.
- */
-export function importCustomCartridgesJson(jsonStr: string): number {
-  try {
-    const parsed = JSON.parse(jsonStr);
-    if (typeof parsed !== 'object' || parsed === null) return 0;
-
-    const existing = loadCustomCartridges();
-    let count = 0;
-
-    for (const [id, spec] of Object.entries(parsed)) {
-      if (spec && typeof spec === 'object' && (spec as any).name && (spec as any).case_length) {
-        existing[id] = spec as CartridgeSpec;
-        count++;
-      }
-    }
-
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
-    return count;
-  } catch (err) {
-    console.error('Failed to import custom cartridges:', err);
-    return 0;
-  }
-}

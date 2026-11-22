@@ -83,22 +83,29 @@ fn open_with_system_viewer(file_path: &std::path::Path, context_label: &str) -> 
     Ok(())
 }
 
+fn find_typst_binary() -> Option<std::path::PathBuf> {
+    if let Ok(path) = which::which("typst") {
+        return Some(path);
+    }
+    // GUI apps launched from Finder on macOS do not inherit Homebrew PATH entries.
+    for candidate in ["/opt/homebrew/bin/typst", "/usr/local/bin/typst"] {
+        let p = std::path::Path::new(candidate);
+        if p.is_file() {
+            return Some(p.to_path_buf());
+        }
+    }
+    None
+}
+
 #[tauri::command]
 fn check_typst_available() -> bool {
-    which::which("typst").is_ok() || std::path::Path::new("/usr/local/bin/typst").exists()
+    find_typst_binary().is_some()
 }
 
 #[tauri::command]
 fn compile_typst_pdf(typst_source: String) -> Result<Vec<u8>, String> {
-    let typst_bin = which::which("typst")
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| {
-            if std::path::Path::new("/usr/local/bin/typst").exists() {
-                "/usr/local/bin/typst".to_string()
-            } else {
-                "typst".to_string()
-            }
-        });
+    let typst_bin = find_typst_binary()
+        .ok_or_else(|| "Typst binary not found on PATH or standard Homebrew locations".to_string())?;
 
     let mut child = Command::new(&typst_bin)
         .args(["compile", "-", "-"])
@@ -161,7 +168,7 @@ fn trigger_system_pdf_print(pdf_data: Vec<u8>, title: String) -> Result<String, 
     Ok(file_path.to_string_lossy().to_string())
 }
 
-#[allow(unused_imports)]
+#[cfg(target_os = "macos")]
 use tauri::{Emitter, Manager};
 
 #[derive(Clone, serde::Serialize)]
@@ -177,14 +184,6 @@ pub struct PendingOpenFile(pub std::sync::Mutex<Option<OpenedFilePayload>>);
 fn get_pending_open_file(state: tauri::State<'_, PendingOpenFile>) -> Option<OpenedFilePayload> {
     let mut lock = state.0.lock().ok()?;
     lock.take()
-}
-
-#[tauri::command]
-fn read_cartridge_file(path: String) -> Result<OpenedFilePayload, String> {
-    let p = std::path::Path::new(&path);
-    let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("Cartridge File").to_string();
-    let content = std::fs::read_to_string(p).map_err(|e| format!("Failed to read file: {}", e))?;
-    Ok(OpenedFilePayload { name, path, content })
 }
 
 #[tauri::command]
@@ -228,7 +227,6 @@ pub fn run() {
             trigger_system_print,
             trigger_system_pdf_print,
             get_pending_open_file,
-            read_cartridge_file,
             restart_app
         ])
         .build(tauri::generate_context!())

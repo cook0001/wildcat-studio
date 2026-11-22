@@ -12,9 +12,9 @@ interface ReamerModalProps {
   isMetric: boolean;
 }
 
-export type ManufacturerFormat = 'jgs' | 'ptg' | 'manson' | 'clymer';
-export type NeckFitOption = 'factory' | 'fitted' | 'tight';
-export type ToolType = 'finisher' | 'rougher' | 'neck_throat';
+type ManufacturerFormat = 'jgs' | 'ptg' | 'manson' | 'clymer';
+type NeckFitOption = 'factory' | 'fitted' | 'tight';
+type ToolType = 'finisher' | 'rougher' | 'neck_throat';
 
 export const ReamerModal: React.FC<ReamerModalProps> = ({ cartridge, isMetric }) => {
   const [activeTab, setActiveTab] = useState<'order' | 'cad_print'>('order');

@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { CartridgeSpec } from '../types/cartridge';
-import { getOuterRadiusAt, getInnerRadiusAt } from '../utils/volumetrics';
+import { getInnerRadiusAt } from '../utils/volumetrics';
 import { Eye, Rotate3d, Download, ZoomIn, ZoomOut, Maximize2, X, Crosshair } from 'lucide-react';
 import { BULLET_OPTIONS, getBulletsForCaliber } from '../data/bullets';
 import { saveExportFile } from '../utils/fileExport';
 import {
   applyBulletPresetToCartridge,
+  buildCaseAndBulletGeometries,
   generateCartridgeStlBinary,
   getActiveBulletPreset,
 } from '../utils/cartridgeHelpers';
@@ -43,21 +44,29 @@ export const ThreeViewport: React.FC<ThreeViewportProps> = ({
   const caseMeshRef = useRef<THREE.Mesh | null>(null);
   const bulletMeshRef = useRef<THREE.Mesh | null>(null);
   const groupRef = useRef<THREE.Group | null>(null);
+  const requestRenderRef = useRef<() => void>(() => {});
+  const wireframeRef = useRef<boolean>(wireframe);
+  wireframeRef.current = wireframe;
 
   const disposeGroupChildren = (group: THREE.Group | null) => {
     if (!group) return;
+    const disposedMaterials = new Set<THREE.Material>();
     while (group.children.length > 0) {
       const child = group.children[0] as THREE.Mesh;
       group.remove(child);
       if (child.geometry) child.geometry.dispose();
       if (child.material) {
-        if (Array.isArray(child.material)) {
-          child.material.forEach((m) => m.dispose());
-        } else {
-          child.material.dispose();
+        const mats = Array.isArray(child.material) ? child.material : [child.material];
+        for (const m of mats) {
+          if (!disposedMaterials.has(m)) {
+            disposedMaterials.add(m);
+            m.dispose();
+          }
         }
       }
     }
+    caseMeshRef.current = null;
+    bulletMeshRef.current = null;
   };
 
   const onSelectBulletRef = useRef(onSelectBullet);
@@ -132,83 +141,21 @@ export const ThreeViewport: React.FC<ThreeViewportProps> = ({
     groupRef.current = group;
     scene.add(group);
 
-    // Orbit Drag State & Raycasting
     let isMouseDown = false;
     let prevMousePos = { x: 0, y: 0 };
     let downPos = { x: 0, y: 0 };
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
-
-    const handleMouseDown = (e: MouseEvent) => {
-      isMouseDown = true;
-      prevMousePos = { x: e.clientX, y: e.clientY };
-      downPos = { x: e.clientX, y: e.clientY };
-    };
-
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isMouseDown) {
-        if (bulletMeshRef.current && cameraRef.current) {
-          const rect = dom.getBoundingClientRect();
-          mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-          mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-          raycaster.setFromCamera(mouse, cameraRef.current);
-          const intersects = raycaster.intersectObject(bulletMeshRef.current);
-          if (intersects.length > 0) {
-            dom.style.cursor = 'pointer';
-            setIsHoveringBullet3D(true);
-          } else {
-            dom.style.cursor = 'default';
-            setIsHoveringBullet3D(false);
-          }
-        }
-        return;
-      }
-
-      if (!group) return;
-      const deltaX = e.clientX - prevMousePos.x;
-      const deltaY = e.clientY - prevMousePos.y;
-
-      group.rotation.y += deltaX * 0.008;
-      group.rotation.x += deltaY * 0.008;
-
-      prevMousePos = { x: e.clientX, y: e.clientY };
-    };
-
-    const handleMouseUp = (e: MouseEvent) => {
-      isMouseDown = false;
-      const dist = Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y);
-      if (dist < 6 && bulletMeshRef.current && cameraRef.current) {
-        const rect = dom.getBoundingClientRect();
-        mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-        mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-        raycaster.setFromCamera(mouse, cameraRef.current);
-        const intersects = raycaster.intersectObject(bulletMeshRef.current);
-        if (intersects.length > 0) {
-          setIsBulletHUDOpen(true);
-          if (onSelectBulletRef.current) {
-            onSelectBulletRef.current();
-          }
-        }
-      }
-    };
-
-    const handleWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      camera.position.multiplyScalar(e.deltaY > 0 ? 1.08 : 0.92);
-      camera.position.clampLength(1.0, 150.0);
-    };
-
-    const dom = renderer.domElement;
-    dom.addEventListener('mousedown', handleMouseDown);
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-    dom.addEventListener('wheel', handleWheel, { passive: false });
-
-    // Render loop (delta-time scaled so auto-spin speed is consistent across refresh rates)
-    let animId: number;
+    let animId: number | null = null;
     let lastTime = performance.now();
-    const animate = (now: number) => {
-      animId = requestAnimationFrame(animate);
+
+    const renderFrame = () => {
+      camera.lookAt(0, 0, 0);
+      renderer.render(scene, camera);
+    };
+
+    const tick = (now: number) => {
+      animId = null;
       const dt = Math.min(0.1, (now - lastTime) / 1000);
       lastTime = now;
 
@@ -216,27 +163,112 @@ export const ThreeViewport: React.FC<ThreeViewportProps> = ({
         groupRef.current.rotation.y += rotationSpeedRef.current * dt * 60;
       }
 
-      camera.lookAt(0, 0, 0);
-      renderer.render(scene, camera);
+      renderFrame();
+
+      if (rotationSpeedRef.current > 0) {
+        animId = requestAnimationFrame(tick);
+      }
     };
-    animId = requestAnimationFrame(animate);
+
+    const requestRender = () => {
+      if (animId !== null) return;
+      lastTime = performance.now();
+      animId = requestAnimationFrame(tick);
+    };
+    requestRenderRef.current = requestRender;
+
+    const handleMouseDown = (e: MouseEvent) => {
+      isMouseDown = true;
+      prevMousePos = { x: e.clientX, y: e.clientY };
+      downPos = { x: e.clientX, y: e.clientY };
+    };
+
+    const handleCanvasHover = (e: MouseEvent) => {
+      if (isMouseDown || !bulletMeshRef.current || !cameraRef.current) return;
+      const rect = dom.getBoundingClientRect();
+      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(mouse, cameraRef.current);
+      const hit = raycaster.intersectObject(bulletMeshRef.current).length > 0;
+      dom.style.cursor = hit ? 'pointer' : 'default';
+      setIsHoveringBullet3D(hit);
+    };
+
+    const handleCanvasLeave = () => {
+      dom.style.cursor = 'default';
+      setIsHoveringBullet3D(false);
+    };
+
+    const handleWindowDragMove = (e: MouseEvent) => {
+      if (!isMouseDown || !group) return;
+      const deltaX = e.clientX - prevMousePos.x;
+      const deltaY = e.clientY - prevMousePos.y;
+      group.rotation.y += deltaX * 0.008;
+      group.rotation.x += deltaY * 0.008;
+      prevMousePos = { x: e.clientX, y: e.clientY };
+      requestRender();
+    };
+
+    const handleMouseUp = (e: MouseEvent) => {
+      if (!isMouseDown) return;
+      isMouseDown = false;
+      const dist = Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y);
+      if (dist < 6 && bulletMeshRef.current && cameraRef.current) {
+        const rect = dom.getBoundingClientRect();
+        mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(mouse, cameraRef.current);
+        if (raycaster.intersectObject(bulletMeshRef.current).length > 0) {
+          setIsBulletHUDOpen(true);
+          onSelectBulletRef.current?.();
+        }
+      }
+      requestRender();
+    };
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      camera.position.multiplyScalar(e.deltaY > 0 ? 1.08 : 0.92);
+      camera.position.clampLength(1.0, 150.0);
+      requestRender();
+    };
+
+    const dom = renderer.domElement;
+    dom.addEventListener('mousedown', handleMouseDown);
+    dom.addEventListener('mousemove', handleCanvasHover);
+    dom.addEventListener('mouseleave', handleCanvasLeave);
+    window.addEventListener('mousemove', handleWindowDragMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    dom.addEventListener('wheel', handleWheel, { passive: false });
+
+    requestRender();
 
     const handleResize = () => {
-      if (!currentMount || !renderer) return;
+      if (!currentMount || !renderer || currentMount.clientWidth === 0 || currentMount.clientHeight === 0) return;
       camera.aspect = currentMount.clientWidth / currentMount.clientHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(currentMount.clientWidth, currentMount.clientHeight);
+      requestRender();
     };
     window.addEventListener('resize', handleResize);
 
     return () => {
-      cancelAnimationFrame(animId);
+      if (animId !== null) cancelAnimationFrame(animId);
+      requestRenderRef.current = () => {};
       dom.removeEventListener('mousedown', handleMouseDown);
-      window.removeEventListener('mousemove', handleMouseMove);
+      dom.removeEventListener('mousemove', handleCanvasHover);
+      dom.removeEventListener('mouseleave', handleCanvasLeave);
+      window.removeEventListener('mousemove', handleWindowDragMove);
       window.removeEventListener('mouseup', handleMouseUp);
       dom.removeEventListener('wheel', handleWheel);
       window.removeEventListener('resize', handleResize);
       disposeGroupChildren(groupRef.current);
+      grid.geometry.dispose();
+      if (Array.isArray(grid.material)) {
+        grid.material.forEach((m) => m.dispose());
+      } else {
+        grid.material.dispose();
+      }
       if (currentMount.contains(renderer.domElement)) {
         currentMount.removeChild(renderer.domElement);
       }
@@ -244,12 +276,19 @@ export const ThreeViewport: React.FC<ThreeViewportProps> = ({
     };
   }, []);
 
-  // Reframe camera when switching to a different cartridge preset (not on parameter slider edits)
+  useEffect(() => {
+    if (rotationSpeed > 0) {
+      requestRenderRef.current();
+    }
+  }, [rotationSpeed]);
+
+  // Reframe camera when switching presets (not on parameter slider edits)
   useEffect(() => {
     const maxDim = Math.max(cartridge.coal, cartridge.rim_diameter * 2.5);
     if (cameraRef.current) {
       const dist = Math.max(4.5, maxDim * 1.35);
       cameraRef.current.position.set(dist * 0.7, dist * 0.45, dist * 0.75);
+      requestRenderRef.current();
     }
   }, [cartridge.id]);
 
@@ -266,17 +305,14 @@ export const ThreeViewport: React.FC<ThreeViewportProps> = ({
     const phiLength = isCutaway3D ? Math.PI * 2.0 - cutawayAngle : Math.PI * 2.0;
 
     if (isLittleBoy) {
-      // ================= 3D LITTLE BOY (MK-I GUN-TYPE) MODEL =================
       const rBody = cartridge.base_diameter / 2;
       const length = cartridge.case_length;
       const lbPoints: THREE.Vector2[] = [];
 
-      // Cylindrical gun barrel bomb casing
       lbPoints.push(new THREE.Vector2(0, zOffset));
       lbPoints.push(new THREE.Vector2(rBody, zOffset));
       lbPoints.push(new THREE.Vector2(rBody, zOffset + length * 0.85));
 
-      // Blunt rounded nose dome
       for (let i = 0; i <= 20; i++) {
         const t = i / 20;
         const z = zOffset + length * 0.85 + t * (length * 0.15);
@@ -289,10 +325,10 @@ export const ThreeViewport: React.FC<ThreeViewportProps> = ({
       lbGeo.computeVertexNormals();
 
       const lbMat = new THREE.MeshStandardMaterial({
-        color: 0x293327, // Dark military gunmetal olive
+        color: 0x293327,
         roughness: 0.55,
         metalness: 0.35,
-        wireframe,
+        wireframe: wireframeRef.current,
         side: THREE.DoubleSide,
       });
 
@@ -301,12 +337,10 @@ export const ThreeViewport: React.FC<ThreeViewportProps> = ({
       group.add(lbMesh);
       caseMeshRef.current = lbMesh;
 
-      // Iconic Mk-I Square Box-Fin Assembly
-      const boxFinMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.5, metalness: 0.45 });
+      const boxFinMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.5, metalness: 0.45, wireframe: wireframeRef.current });
       const finSpan = rBody * 2.4;
       const finLen = length * 0.2;
 
-      // Cross fin blades
       const fin1 = new THREE.Mesh(new THREE.BoxGeometry(finLen, finSpan, 0.05), boxFinMat);
       fin1.position.x = zOffset + finLen * 0.5;
       group.add(fin1);
@@ -315,7 +349,6 @@ export const ThreeViewport: React.FC<ThreeViewportProps> = ({
       fin2.position.x = zOffset + finLen * 0.5;
       group.add(fin2);
 
-      // Square Box Shroud (4 Plates)
       const plateThick = 0.04;
       const boxW = finSpan * 0.85;
 
@@ -335,8 +368,7 @@ export const ThreeViewport: React.FC<ThreeViewportProps> = ({
       rightPlate.position.set(zOffset + finLen * 0.5, 0, boxW / 2);
       group.add(rightPlate);
 
-      // Radar Proximity Antenna Probes on Nose
-      const antennaMat = new THREE.MeshStandardMaterial({ color: 0xcbd5e1, metalness: 0.9, roughness: 0.1 });
+      const antennaMat = new THREE.MeshStandardMaterial({ color: 0xcbd5e1, metalness: 0.9, roughness: 0.1, wireframe: wireframeRef.current });
       for (let i = 0; i < 4; i++) {
         const aAngle = (i * Math.PI) / 2 + Math.PI / 4;
         const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, length * 0.08, 12), antennaMat);
@@ -349,30 +381,27 @@ export const ThreeViewport: React.FC<ThreeViewportProps> = ({
         group.add(antenna);
       }
 
-      // Internal Gun-Type Mechanism in 3D Cutaway
       if (isCutaway3D) {
-        // Gun Barrel Tube
         const barrelGeo = new THREE.CylinderGeometry(rBody * 0.35, rBody * 0.35, length * 0.75, 24, 1, true);
-        const barrelMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.85, roughness: 0.25, side: THREE.DoubleSide });
+        const barrelMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.85, roughness: 0.25, wireframe: wireframeRef.current, side: THREE.DoubleSide });
         const barrelMesh = new THREE.Mesh(barrelGeo, barrelMat);
         barrelMesh.rotation.z = Math.PI / 2;
         barrelMesh.position.x = zOffset + length * 0.45;
         group.add(barrelMesh);
 
-        // Glowing U-235 Target Rings at Muzzle
         const targetGeo = new THREE.CylinderGeometry(rBody * 0.3, rBody * 0.3, length * 0.12, 24);
         const targetMat = new THREE.MeshStandardMaterial({
           color: 0x10b981,
           emissive: 0x10b981,
           emissiveIntensity: 0.9,
           roughness: 0.3,
+          wireframe: wireframeRef.current,
         });
         const targetMesh = new THREE.Mesh(targetGeo, targetMat);
         targetMesh.rotation.z = Math.PI / 2;
         targetMesh.position.x = zOffset + length * 0.76;
         group.add(targetMesh);
 
-        // U-235 Projectile Bullet at Breech
         const projGeo = new THREE.CylinderGeometry(rBody * 0.28, rBody * 0.28, length * 0.1, 24);
         const projMesh = new THREE.Mesh(projGeo, targetMat);
         projMesh.rotation.z = Math.PI / 2;
@@ -380,75 +409,29 @@ export const ThreeViewport: React.FC<ThreeViewportProps> = ({
         group.add(projMesh);
       }
     } else {
-      // ================= STANDARD PRECISION CARTRIDGE MODEL =================
-      const steps = 60;
-      const casePoints: THREE.Vector2[] = [];
-
-      // Head base solid face
-      casePoints.push(new THREE.Vector2(0, zOffset));
-
-      for (let i = 0; i <= steps; i++) {
-        const z = (i / steps) * cartridge.case_length;
-        const r = getOuterRadiusAt(cartridge, z);
-        casePoints.push(new THREE.Vector2(r, z + zOffset));
-      }
-
-      // If cutaway, build inner wall contour back to base web
-      if (isCutaway3D) {
-        const innerSteps = 40;
-        const webZ = cartridge.web_thickness;
-        for (let i = innerSteps; i >= 0; i--) {
-          const z = webZ + (i / innerSteps) * (cartridge.case_length - webZ);
-          const r = getInnerRadiusAt(cartridge, z);
-          casePoints.push(new THREE.Vector2(r, z + zOffset));
-        }
-        casePoints.push(new THREE.Vector2(0, webZ + zOffset));
-      }
-
-      // Lathe Case Mesh
-      const caseGeo = new THREE.LatheGeometry(casePoints, 48, 0, phiLength);
-      caseGeo.computeVertexNormals();
-
-      const brassMaterial = new THREE.MeshStandardMaterial({
-        color: 0xd4af37, // Polished cartridge brass
-        roughness: 0.22,
-        metalness: 0.92,
-        wireframe,
-        side: THREE.DoubleSide,
-      });
-
-      const caseMesh = new THREE.Mesh(caseGeo, brassMaterial);
-      caseMesh.rotation.z = Math.PI / 2; // Lay horizontal along X
-      group.add(caseMesh);
-      caseMeshRef.current = caseMesh;
-
-      // Seated Bullet Geometry
-      const bulletPoints: THREE.Vector2[] = [];
+      const { caseGeo, bulletGeo } = buildCaseAndBulletGeometries(cartridge, phiLength);
       const zBulletBase = cartridge.coal - cartridge.bullet_length;
       const rBullet = cartridge.bullet_diameter / 2;
       const bSteps = 40;
 
-      bulletPoints.push(new THREE.Vector2(0, zBulletBase + zOffset));
-      bulletPoints.push(new THREE.Vector2(rBullet, zBulletBase + zOffset));
-      bulletPoints.push(new THREE.Vector2(rBullet, cartridge.case_length + zOffset));
+      const brassMaterial = new THREE.MeshStandardMaterial({
+        color: 0xd4af37,
+        roughness: 0.22,
+        metalness: 0.92,
+        wireframe: wireframeRef.current,
+        side: THREE.DoubleSide,
+      });
 
-      for (let i = 1; i <= bSteps; i++) {
-        const t = i / bSteps;
-        const z = cartridge.case_length + t * (cartridge.coal - cartridge.case_length);
-        // Tangent ogive curvature
-        const r = rBullet * Math.sqrt(1 - t * t * 0.95);
-        bulletPoints.push(new THREE.Vector2(Math.max(0, r), z + zOffset));
-      }
-      bulletPoints.push(new THREE.Vector2(0, cartridge.coal + zOffset));
-
-      const bulletGeo = new THREE.LatheGeometry(bulletPoints, 48, 0, phiLength);
-      bulletGeo.computeVertexNormals();
+      const caseMesh = new THREE.Mesh(caseGeo, brassMaterial);
+      caseMesh.rotation.z = Math.PI / 2;
+      group.add(caseMesh);
+      caseMeshRef.current = caseMesh;
 
       const copperMaterial = new THREE.MeshStandardMaterial({
-        color: 0xb87333, // Gilding metal / copper jacket
+        color: 0xb87333,
         roughness: 0.30,
         metalness: 0.88,
-        wireframe,
+        wireframe: wireframeRef.current,
         side: THREE.DoubleSide,
       });
 
@@ -457,31 +440,30 @@ export const ThreeViewport: React.FC<ThreeViewportProps> = ({
       group.add(bulletMesh);
       bulletMeshRef.current = bulletMesh;
 
-      // Internal Cutaway Sub-Meshes: Primer Cup, Powder Column, Lead Core
       if (isCutaway3D) {
-        // 1. Nickel-Plated Primer Cup
-        const primerPoints: THREE.Vector2[] = [];
-        const rPrimer = Math.min(cartridge.primer_pocket_dia / 2, cartridge.base_diameter / 4);
-        const pDepth = Math.min(cartridge.primer_pocket_depth, cartridge.web_thickness * 0.85);
-        primerPoints.push(new THREE.Vector2(0, zOffset));
-        primerPoints.push(new THREE.Vector2(rPrimer, zOffset));
-        primerPoints.push(new THREE.Vector2(rPrimer, zOffset + pDepth));
-        primerPoints.push(new THREE.Vector2(0, zOffset + pDepth));
+        if (cartridge.rim_type !== 'rimfire' && cartridge.primer_pocket_dia > 0 && cartridge.primer_pocket_depth > 0) {
+          const primerPoints: THREE.Vector2[] = [];
+          const rPrimer = Math.min(cartridge.primer_pocket_dia / 2, cartridge.base_diameter / 4);
+          const pDepth = Math.min(cartridge.primer_pocket_depth, cartridge.web_thickness * 0.85);
+          primerPoints.push(new THREE.Vector2(0, zOffset));
+          primerPoints.push(new THREE.Vector2(rPrimer, zOffset));
+          primerPoints.push(new THREE.Vector2(rPrimer, zOffset + pDepth));
+          primerPoints.push(new THREE.Vector2(0, zOffset + pDepth));
 
-        const primerGeo = new THREE.LatheGeometry(primerPoints, 32, 0, phiLength);
-        primerGeo.computeVertexNormals();
-        const primerMat = new THREE.MeshStandardMaterial({
-          color: 0xd1d5db, // Nickel/silver primer
-          roughness: 0.28,
-          metalness: 0.82,
-          wireframe,
-          side: THREE.DoubleSide,
-        });
-        const primerMesh = new THREE.Mesh(primerGeo, primerMat);
-        primerMesh.rotation.z = Math.PI / 2;
-        group.add(primerMesh);
+          const primerGeo = new THREE.LatheGeometry(primerPoints, 32, 0, phiLength);
+          primerGeo.computeVertexNormals();
+          const primerMat = new THREE.MeshStandardMaterial({
+            color: 0xd1d5db,
+            roughness: 0.28,
+            metalness: 0.82,
+            wireframe: wireframeRef.current,
+            side: THREE.DoubleSide,
+          });
+          const primerMesh = new THREE.Mesh(primerGeo, primerMat);
+          primerMesh.rotation.z = Math.PI / 2;
+          group.add(primerMesh);
+        }
 
-        // 2. Granular Nitrocellulose Propellant Column
         const webZ = cartridge.web_thickness;
         const zPowderTop = Math.max(webZ + 0.02, zBulletBase);
         if (zPowderTop > webZ) {
@@ -498,10 +480,10 @@ export const ThreeViewport: React.FC<ThreeViewportProps> = ({
           const powderGeo = new THREE.LatheGeometry(powderPoints, 36, 0, phiLength);
           powderGeo.computeVertexNormals();
           const powderMat = new THREE.MeshStandardMaterial({
-            color: 0x1c232c, // Extruded graphite powder
+            color: 0x1c232c,
             roughness: 0.94,
             metalness: 0.06,
-            wireframe,
+            wireframe: wireframeRef.current,
             side: THREE.DoubleSide,
           });
           const powderMesh = new THREE.Mesh(powderGeo, powderMat);
@@ -509,7 +491,6 @@ export const ThreeViewport: React.FC<ThreeViewportProps> = ({
           group.add(powderMesh);
         }
 
-        // 3. Dense Lead Alloy Bullet Core
         const leadPoints: THREE.Vector2[] = [];
         const jacketThickness = 0.016;
         const rLead = Math.max(0.01, rBullet - jacketThickness);
@@ -528,10 +509,10 @@ export const ThreeViewport: React.FC<ThreeViewportProps> = ({
         const leadGeo = new THREE.LatheGeometry(leadPoints, 36, 0, phiLength);
         leadGeo.computeVertexNormals();
         const leadMat = new THREE.MeshStandardMaterial({
-          color: 0x64748b, // Dull grey lead core
+          color: 0x64748b,
           roughness: 0.65,
           metalness: 0.45,
-          wireframe,
+          wireframe: wireframeRef.current,
           side: THREE.DoubleSide,
         });
         const leadMesh = new THREE.Mesh(leadGeo, leadMat);
@@ -539,12 +520,29 @@ export const ThreeViewport: React.FC<ThreeViewportProps> = ({
         group.add(leadMesh);
       }
     }
-  }, [cartridge, isCutaway3D, cutawaySlicePct, wireframe]);
+    requestRenderRef.current();
+  }, [cartridge, isCutaway3D, cutawaySlicePct]);
 
-  // Sync orientation when rotation changes
+  useEffect(() => {
+    const group = groupRef.current;
+    if (!group) return;
+    group.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (!mesh.material) return;
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const m of mats) {
+        if ('wireframe' in m) {
+          (m as THREE.MeshStandardMaterial).wireframe = wireframe;
+        }
+      }
+    });
+    requestRenderRef.current();
+  }, [wireframe]);
+
   useEffect(() => {
     if (groupRef.current && rotation !== undefined) {
       groupRef.current.rotation.z = (rotation * Math.PI) / 180;
+      requestRenderRef.current();
     }
   }, [rotation]);
 
@@ -571,6 +569,7 @@ export const ThreeViewport: React.FC<ThreeViewportProps> = ({
     if (cameraRef.current) {
       cameraRef.current.position.multiplyScalar(0.82);
       cameraRef.current.position.clampLength(1.0, 150.0);
+      requestRenderRef.current();
     }
   };
 
@@ -578,6 +577,7 @@ export const ThreeViewport: React.FC<ThreeViewportProps> = ({
     if (cameraRef.current) {
       cameraRef.current.position.multiplyScalar(1.22);
       cameraRef.current.position.clampLength(1.0, 150.0);
+      requestRenderRef.current();
     }
   };
 
@@ -589,6 +589,7 @@ export const ThreeViewport: React.FC<ThreeViewportProps> = ({
       if (groupRef.current) {
         groupRef.current.rotation.set(0, 0, 0);
       }
+      requestRenderRef.current();
     }
   };
 
@@ -794,7 +795,7 @@ export const ThreeViewport: React.FC<ThreeViewportProps> = ({
           zIndex: 10
         }}>
           <Crosshair size={13} color="var(--cad-copper)" />
-          <span>Projectile: <strong>.{cartridge.bullet_diameter.toString().split('.')[1] || cartridge.bullet_diameter}"</strong> ({cartridge.bullet_weight_grains || 0}gr)</span>
+          <span>Projectile: <strong>{cartridge.bullet_diameter.toFixed(3)}"</strong> ({cartridge.bullet_weight_grains || 0}gr)</span>
           <span style={{ color: 'var(--cad-cyan)', fontSize: '10px' }}>— Click to inspect & select factory bullet model</span>
         </div>
       )}

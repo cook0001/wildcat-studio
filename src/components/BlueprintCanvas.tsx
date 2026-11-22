@@ -1,66 +1,46 @@
-import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { createPortal } from 'react-dom';
-import { CartridgeSpec, CARTRIDGE_PRESETS, DraftingStandard, ToleranceDisplayMode } from '../types/cartridge';
-import { 
-  getOuterRadiusAt, 
-  getInnerRadiusAt, 
-  getChamberRadiusAt, 
-  isStraightWall, 
-  calculateVolumetrics, 
+import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  CartridgeSpec,
+  DraftingStandard,
+  ToleranceDisplayMode,
+  VolumetricResult,
+} from '../types/cartridge';
+import {
+  getOuterRadiusAt,
+  getInnerRadiusAt,
+  getChamberRadiusAt,
+  isStraightWall,
+  calculateVolumetrics,
   calculateReamerSpecs,
   calculateDatumHeadspace,
   calculateCIPDeltaL,
-  effectiveShoulderLength
+  effectiveShoulderLength,
 } from '../utils/volumetrics';
+import { buildClosedSvgContour } from '../utils/cartridgeHelpers';
 import {
-  buildClosedSvgContour,
-  getActiveBulletPreset
-} from '../utils/cartridgeHelpers';
-import { 
-  CALIBER_PRESETS, 
-  BULLET_OPTIONS, 
-  BulletOption, 
-  getBulletsForCaliber 
-} from '../data/bullets';
-import { 
-  ZoomIn, 
-  ZoomOut, 
-  RotateCcw, 
-  Crosshair, 
-  Check, 
-  X, 
-  Edit3, 
-  Undo2, 
-  ShieldOff, 
-  Maximize2, 
-  GripVertical, 
-  RotateCw, 
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
+  Crosshair,
+  X,
+  Edit3,
+  Maximize2,
+  GripVertical,
+  RotateCw,
   Layers,
-  Eye,
-  EyeOff,
-  Grid,
   Shield,
-  SplitSquareVertical,
-  Compass,
-  Box,
-  Disc,
-  Scale,
   ChevronDown,
   ChevronUp,
-  ChevronLeft,
-  ChevronRight,
-  Sliders,
-  Droplet,
-  AlertTriangle,
-  CheckCircle2,
-  Lock,
-  Unlock
 } from 'lucide-react';
+import { BlueprintToolbar, DrawingMode } from './blueprint/BlueprintToolbar';
+import { LittleBoySvg } from './blueprint/LittleBoySvg';
+import { DimensionEditorPopover, EditingDimState } from './blueprint/DimensionEditorPopover';
 
-export type DrawingMode = 'outline' | 'wireframe' | 'cutaway' | 'half_section' | 'chamber_fit';
+export type { DrawingMode };
 
 interface BlueprintCanvasProps {
   cartridge: CartridgeSpec;
+  volumetrics?: VolumetricResult;
   mode?: 'blueprint' | 'cutaway';
   drawingMode?: DrawingMode;
   onDrawingModeChange?: (mode: DrawingMode) => void;
@@ -91,24 +71,9 @@ interface BlueprintCanvasProps {
   onOpenCalibration?: () => void;
 }
 
-interface EditingDimState {
-  key: keyof CartridgeSpec;
-  label: string;
-  symbol: string;
-  initialValInches: number;
-  initialSnapshot: CartridgeSpec;
-  displayVal: number;
-  draftValue?: string;
-  isAngle?: boolean;
-  svgX: number;
-  svgY: number;
-  clientX?: number;
-  clientY?: number;
-  history: number[]; // Stack of values adjusted in this session for undo
-}
-
 export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
   cartridge,
+  volumetrics: propVolumetrics,
   mode = 'blueprint',
   drawingMode: propDrawingMode,
   onDrawingModeChange,
@@ -144,7 +109,6 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  // Rotational State (0°, 90°, 180°, 270°)
   const [internalRotation, setInternalRotation] = useState<number>(0);
   const rotation = propRotation !== undefined ? propRotation : internalRotation;
 
@@ -157,21 +121,21 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
     }
   }, [rotation, onRotationChange]);
 
-  // CAD Drawing Mode & Visibility Layers State
-  const [internalDrawingMode, setInternalDrawingMode] = useState<DrawingMode>(mode === 'cutaway' ? 'cutaway' : 'outline');
+  const [internalDrawingMode, setInternalDrawingMode] = useState<DrawingMode>(
+    mode === 'cutaway' ? 'cutaway' : 'outline'
+  );
   const [internalShowChamber, setInternalShowChamber] = useState<boolean>(false);
   const [internalShowDimensions, setInternalShowDimensions] = useState<boolean>(true);
   const [internalShowBullet, setInternalShowBullet] = useState<boolean>(true);
   const [internalShowGrid, setInternalShowGrid] = useState<boolean>(true);
 
-  // Synchronize with external mode changes
   useEffect(() => {
     if (propDrawingMode !== undefined) return;
-    if (mode === 'cutaway') {
-      setInternalDrawingMode('cutaway');
-    } else if (mode === 'blueprint' && internalDrawingMode === 'cutaway') {
-      setInternalDrawingMode('outline');
-    }
+    setInternalDrawingMode((prev) => {
+      if (mode === 'cutaway') return 'cutaway';
+      if (mode === 'blueprint' && prev === 'cutaway') return 'outline';
+      return prev;
+    });
   }, [mode, propDrawingMode]);
 
   const activeDrawingMode = propDrawingMode !== undefined ? propDrawingMode : internalDrawingMode;
@@ -180,7 +144,6 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
   const activeShowBullet = propShowBullet !== undefined ? propShowBullet : internalShowBullet;
   const activeShowGrid = propShowGrid !== undefined ? propShowGrid : internalShowGrid;
 
-  // Dual Standard Drafting (SAAMI vs C.I.P.) & Manufacturing Tolerance Mode
   const [internalStandard, setInternalStandard] = useState<DraftingStandard>('saami');
   const [internalTolerance, setInternalTolerance] = useState<ToleranceDisplayMode>('nominal');
 
@@ -195,70 +158,17 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
     }
   };
 
-  const handleSetTolerance = (mode: ToleranceDisplayMode) => {
+  const handleSetTolerance = (nextTol: ToleranceDisplayMode) => {
     if (onToleranceModeChange) {
-      onToleranceModeChange(mode);
+      onToleranceModeChange(nextTol);
     } else {
-      setInternalTolerance(mode);
+      setInternalTolerance(nextTol);
     }
   };
 
-  // Toolbar collapse & dropdown state
-  const [isToolbarCollapsed, setIsToolbarCollapsed] = useState<boolean>(() => {
-    return localStorage.getItem('wildcat_cad_toolbar_collapsed') === 'true';
-  });
-  const [activeDropdown, setActiveDropdown] = useState<'mode' | 'layers' | 'tolerance' | null>(null);
-  const toolbarRef = useRef<HTMLDivElement>(null);
-
-  const toggleToolbarCollapse = () => {
-    setIsToolbarCollapsed((prev) => {
-      const next = !prev;
-      localStorage.setItem('wildcat_cad_toolbar_collapsed', String(next));
-      if (next) setActiveDropdown(null);
-      return next;
-    });
-  };
-
-  // Close dropdown on outside click or escape
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (toolbarRef.current && !toolbarRef.current.contains(e.target as Node)) {
-        setActiveDropdown(null);
-      }
-    };
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setActiveDropdown(null);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, []);
-
-  // Dismissible measurement badge helper banner state
   const [isHelperDismissed, setIsHelperDismissed] = useState<boolean>(() => {
     return localStorage.getItem('wildcat_helper_dismissed') === 'true';
   });
-
-  const MODE_ITEMS: { id: DrawingMode; label: string; icon: React.FC<any>; desc: string }[] = [
-    { id: 'outline', label: 'Outline', icon: Box, desc: 'Exterior SAAMI/CIP Silhouette' },
-    { id: 'wireframe', label: 'Wireframe', icon: Grid, desc: 'CAD Wireframe with Internal Lines' },
-    { id: 'cutaway', label: 'Cutaway', icon: SplitSquareVertical, desc: 'Full Longitudinal Cross-Section' },
-    { id: 'half_section', label: 'Half-Section', icon: Disc, desc: 'ISO Half-Section (Cutaway / Solid)' },
-    { id: 'chamber_fit', label: 'Chamber Fit', icon: Shield, desc: 'Cartridge in Reamer Chamber' },
-  ];
-
-  const TOL_ITEMS: { id: ToleranceDisplayMode; label: string; short: string; desc: string }[] = [
-    { id: 'nominal', label: 'Nominal Spec', short: 'Nom', desc: 'Nominal Blueprint Dimension Spec' },
-    { id: 'cartridge_max', label: 'Max Cartridge (MMC)', short: 'Max Cart', desc: 'Maximum Material Condition Boundary' },
-    { id: 'chamber_min', label: 'Min Chamber (LMC)', short: 'Min Cham', desc: 'Minimum Material Condition Reamer' },
-    { id: 'clearance', label: 'Clearance Fit Band', short: 'Clearance', desc: 'Chamber Min - Cartridge Max Delta' },
-    { id: 'dual_envelope', label: 'Dual Envelope (MMC + LMC)', short: 'Dual Envelope', desc: 'Simultaneous Max Cartridge & Min Chamber Tolerance Lines' },
-  ];
 
   const getReamerClearanceForKey = (key: keyof CartridgeSpec, type: 'diameter' | 'length'): number => {
     switch (key) {
@@ -274,7 +184,6 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
     }
   };
 
-  // Helper to format dimension badge with active tolerance and drafting standard
   const getBadgeText = (
     key: keyof CartridgeSpec,
     nominalVal: number,
@@ -342,88 +251,13 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
     }
   };
 
-  // Interactive In-Diagram Editing State
   const [editingDim, setEditingDim] = useState<EditingDimState | null>(null);
   const [hoveredDim, setHoveredDim] = useState<string | null>(null);
-  const [popoverPos, setPopoverPos] = useState<{ x: number; y: number } | null>(null);
-  const [isDraggingPopover, setIsDraggingPopover] = useState<boolean>(false);
-  const popoverDragRef = useRef<{ startMouseX: number; startMouseY: number; startPosX: number; startPosY: number } | null>(null);
+  const [isHoveringBullet, setIsHoveringBullet] = useState<boolean>(false);
 
-  // Dragging handler for the floating measurement popover (viewport-clamped)
-  const handlePopoverMouseDown = (e: React.MouseEvent) => {
-    if (e.button !== 0) return;
-    e.stopPropagation();
-    e.preventDefault();
-
-    const popoverWidth = 350;
-    const maxAvailableHeight = Math.max(300, window.innerHeight - 65);
-    const popoverHeight = Math.min(480, maxAvailableHeight);
-    const targetX = editingDim?.clientX ?? ((editingDim?.svgX ?? 0) + pan.x);
-    const targetY = editingDim?.clientY ?? ((editingDim?.svgY ?? 0) + pan.y);
-    const spawnY = targetY > window.innerHeight * 0.5 ? targetY - popoverHeight - 16 : targetY + 20;
-
-    const defaultLeft = Math.max(16, Math.min(window.innerWidth - popoverWidth - 16, targetX - popoverWidth / 2));
-    const defaultTop = Math.max(48, Math.min(window.innerHeight - popoverHeight - 12, spawnY));
-    const currentX = popoverPos ? popoverPos.x : defaultLeft;
-    const currentY = popoverPos ? popoverPos.y : defaultTop;
-
-    popoverDragRef.current = {
-      startMouseX: e.clientX,
-      startMouseY: e.clientY,
-      startPosX: currentX,
-      startPosY: currentY,
-    };
-    setIsDraggingPopover(true);
-  };
-
-  useEffect(() => {
-    if (!isDraggingPopover) return;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!popoverDragRef.current) return;
-      const deltaX = e.clientX - popoverDragRef.current.startMouseX;
-      const deltaY = e.clientY - popoverDragRef.current.startMouseY;
-
-      const popoverWidth = 350;
-      const maxAvailableHeight = Math.max(300, window.innerHeight - 65);
-      const popoverHeight = Math.min(480, maxAvailableHeight);
-      const newX = Math.max(12, Math.min(window.innerWidth - popoverWidth - 12, popoverDragRef.current.startPosX + deltaX));
-      const newY = Math.max(45, Math.min(window.innerHeight - popoverHeight - 12, popoverDragRef.current.startPosY + deltaY));
-
-      setPopoverPos({ x: newX, y: newY });
-    };
-
-    const handleMouseUp = () => {
-      setIsDraggingPopover(false);
-      popoverDragRef.current = null;
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isDraggingPopover]);
-
-  // Global keydown listener when editingDim is active (Cmd+Z undo, Esc revert, Enter commit)
-  useEffect(() => {
-    if (!editingDim) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
-        e.preventDefault();
-        handleUndoDimStep();
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        handleRevertAndClose();
-      } else if (e.key === 'Enter' && (e.target as HTMLElement)?.tagName !== 'BUTTON') {
-        e.preventDefault();
-        handleCommitAndClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [editingDim]);
+  const closePopover = useCallback(() => {
+    setEditingDim(null);
+  }, []);
 
   // Floating Chamber Fit & Telemetry HUD State
   const [chamberHudPos, setChamberHudPos] = useState<{ x: number; y: number } | null>(null);
@@ -654,86 +488,154 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
     setPan({ x: 0, y: 0 });
   };
 
-  // Outer profile points and open/closed SVG paths
-  const steps = 100;
-  const dz = cartridge.case_length / steps;
-  const outerPts: [number, number][] = [];
-  for (let i = 0; i <= steps; i++) {
-    const z = i * dz;
-    outerPts.push([originX + z * scale, getOuterRadiusAt(cartridge, z) * scale]);
-  }
-  const rRim = getOuterRadiusAt(cartridge, 0) * scale;
-  const outerTopPath =
-    `M ${originX} ${centerY} L ${originX} ${centerY - rRim}` +
-    outerPts.map(([px, r]) => ` L ${px} ${centerY - r}`).join('');
-  const outerBottomPath =
-    `M ${originX} ${centerY} L ${originX} ${centerY + rRim}` +
-    outerPts.map(([px, r]) => ` L ${px} ${centerY + r}`).join('');
-  const outerClosedPath = buildClosedSvgContour(
-    outerPts,
-    (px, signedR) => `${px} ${centerY + signedR}`
+  const activeVol = useMemo(
+    () => propVolumetrics ?? calculateVolumetrics(cartridge),
+    [propVolumetrics, cartridge]
   );
-  const outerCutawayClosedPath =
-    outerTopPath +
-    ` L ${originX + cartridge.case_length * scale} ${centerY - (cartridge.neck_diameter_mouth / 2 - cartridge.neck_wall_thickness) * scale}` +
-    ` L ${originX + cartridge.case_length * scale} ${centerY + (cartridge.neck_diameter_mouth / 2 - cartridge.neck_wall_thickness) * scale}` +
-    [...outerPts].reverse().map(([px, r]) => ` L ${px} ${centerY + r}`).join('') +
-    ` L ${originX} ${centerY + rRim} Z`;
+  const ghostVol = useMemo(
+    () => (ghostCartridge ? calculateVolumetrics(ghostCartridge) : null),
+    [ghostCartridge]
+  );
+  const reamer = useMemo(() => calculateReamerSpecs(cartridge), [cartridge]);
+  const datumHeadspace = useMemo(() => calculateDatumHeadspace(cartridge), [cartridge]);
+  const cipDeltaL = useMemo(() => calculateCIPDeltaL(cartridge), [cartridge]);
 
-  // Mouth edge
+  const { rRim, outerBottomPath, outerClosedPath, outerCutawayClosedPath } = useMemo(() => {
+    const steps = 100;
+    const dz = cartridge.case_length / steps;
+    const outerPts: [number, number][] = [];
+    for (let i = 0; i <= steps; i++) {
+      const z = i * dz;
+      outerPts.push([originX + z * scale, getOuterRadiusAt(cartridge, z) * scale]);
+    }
+    const rimRadius = getOuterRadiusAt(cartridge, 0) * scale;
+    const topPath =
+      `M ${originX} ${centerY} L ${originX} ${centerY - rimRadius}` +
+      outerPts.map(([px, r]) => ` L ${px} ${centerY - r}`).join('');
+    const bottomPath =
+      `M ${originX} ${centerY} L ${originX} ${centerY + rimRadius}` +
+      outerPts.map(([px, r]) => ` L ${px} ${centerY + r}`).join('');
+    const closedPath = buildClosedSvgContour(
+      outerPts,
+      (px, signedR) => `${px} ${centerY + signedR}`
+    );
+    const cutawayClosedPath =
+      topPath +
+      ` L ${originX + cartridge.case_length * scale} ${centerY - (cartridge.neck_diameter_mouth / 2 - cartridge.neck_wall_thickness) * scale}` +
+      ` L ${originX + cartridge.case_length * scale} ${centerY + (cartridge.neck_diameter_mouth / 2 - cartridge.neck_wall_thickness) * scale}` +
+      [...outerPts].reverse().map(([px, r]) => ` L ${px} ${centerY + r}`).join('') +
+      ` L ${originX} ${centerY + rimRadius} Z`;
+
+    return {
+      rRim: rimRadius,
+      outerBottomPath: bottomPath,
+      outerClosedPath: closedPath,
+      outerCutawayClosedPath: cutawayClosedPath,
+    };
+  }, [cartridge, originX, centerY, scale]);
+
   const zMouth = originX + cartridge.case_length * scale;
 
-  // Inner cavity path for cutaway, half-section, and wireframe
-  let innerTopPath = '';
-  let innerBottomPath = '';
-  let innerClosedPath = '';
-  const needsInnerPaths = activeDrawingMode === 'cutaway' || activeDrawingMode === 'half_section' || activeDrawingMode === 'wireframe';
-  if (needsInnerPaths) {
+  const needsInnerPaths =
+    activeDrawingMode === 'cutaway' ||
+    activeDrawingMode === 'half_section' ||
+    activeDrawingMode === 'wireframe';
+
+  const { innerTopPath, innerBottomPath, innerClosedPath, innerHalfSectionPath, rWeb } = useMemo(() => {
+    if (!needsInnerPaths) {
+      return {
+        innerTopPath: '',
+        innerBottomPath: '',
+        innerClosedPath: '',
+        innerHalfSectionPath: '',
+        rWeb: 0,
+      };
+    }
+    const steps = 100;
     const innerPts: [number, number][] = [];
     for (let i = 0; i <= steps; i++) {
       const z = cartridge.web_thickness + (i / steps) * (cartridge.case_length - cartridge.web_thickness);
       innerPts.push([originX + z * scale, getInnerRadiusAt(cartridge, z) * scale]);
     }
     const zWeb = originX + cartridge.web_thickness * scale;
-    const rWeb = getInnerRadiusAt(cartridge, cartridge.web_thickness) * scale;
-    innerTopPath = `M ${zWeb} ${centerY - rWeb}` + innerPts.map(([px, r]) => ` L ${px} ${centerY - r}`).join('');
-    innerBottomPath = `M ${zWeb} ${centerY + rWeb}` + innerPts.map(([px, r]) => ` L ${px} ${centerY + r}`).join('');
-    innerClosedPath = buildClosedSvgContour(
+    const webRadius = getInnerRadiusAt(cartridge, cartridge.web_thickness) * scale;
+    const topSegs = innerPts.map(([px, r]) => ` L ${px} ${centerY - r}`).join('');
+    const topPath = `M ${zWeb} ${centerY - webRadius}` + topSegs;
+    const bottomPath = `M ${zWeb} ${centerY + webRadius}` + innerPts.map(([px, r]) => ` L ${px} ${centerY + r}`).join('');
+    const closedPath = buildClosedSvgContour(
       innerPts,
       (px, signedR) => `${px} ${centerY + signedR}`
     );
-  }
+    const halfSectionPath = `M ${zWeb} ${centerY} L ${zWeb} ${centerY - webRadius}${topSegs} L ${zMouth} ${centerY} Z`;
 
-  // Chamber reamer cut profile (for chamber_fit and chamber overlay)
-  const reamer = calculateReamerSpecs(cartridge);
+    return {
+      innerTopPath: topPath,
+      innerBottomPath: bottomPath,
+      innerClosedPath: closedPath,
+      innerHalfSectionPath: halfSectionPath,
+      rWeb: webRadius,
+    };
+  }, [needsInnerPaths, cartridge, originX, centerY, scale, zMouth]);
+
   const zChamberEnd = originX + (reamer.chamber_length + reamer.freebore_length + 0.12) * scale;
   const zChamberMouth = originX + reamer.chamber_length * scale;
   const zChamberFreeboreEnd = originX + (reamer.chamber_length + reamer.freebore_length) * scale;
 
-  let chamberTopPath = '';
-  let chamberBottomPath = '';
-  const needsChamber = activeShowChamber || activeDrawingMode === 'chamber_fit' || activeTolerance === 'dual_envelope';
-  if (needsChamber) {
+  const needsChamber =
+    activeShowChamber || activeDrawingMode === 'chamber_fit' || activeTolerance === 'dual_envelope';
+
+  const { chamberTopPath, chamberBottomPath, chamberTopHatchPath, chamberBottomHatchPath } = useMemo(() => {
+    if (!needsChamber) {
+      return {
+        chamberTopPath: '',
+        chamberBottomPath: '',
+        chamberTopHatchPath: '',
+        chamberBottomHatchPath: '',
+      };
+    }
     const chSteps = 80;
     const chMaxZ = reamer.chamber_length + reamer.freebore_length + 0.12;
     const chDz = chMaxZ / chSteps;
-    chamberTopPath = `M ${originX} ${centerY - (reamer.chamber_rim_dia / 2) * scale}`;
-    chamberBottomPath = `M ${originX} ${centerY + (reamer.chamber_rim_dia / 2) * scale}`;
+    const topPts: string[] = [];
+    const botPts: string[] = [];
     for (let i = 0; i <= chSteps; i++) {
       const z = i * chDz;
       const r = getChamberRadiusAt(cartridge, z) * scale;
       const px = originX + z * scale;
-      chamberTopPath += ` L ${px} ${centerY - r}`;
-      chamberBottomPath += ` L ${px} ${centerY + r}`;
+      topPts.push(`L ${px} ${centerY - r}`);
+      botPts.push(`L ${px} ${centerY + r}`);
     }
-  }
+    const topPath = `M ${originX} ${centerY - (reamer.chamber_rim_dia / 2) * scale} ${topPts.join(' ')}`;
+    const bottomPath = `M ${originX} ${centerY + (reamer.chamber_rim_dia / 2) * scale} ${botPts.join(' ')}`;
 
-  // Bullet profile
+    const topHatch =
+      `M ${originX - 20} ${centerY - (reamer.chamber_rim_dia / 2 + 0.4) * scale}` +
+      ` L ${zChamberEnd + 40} ${centerY - (reamer.chamber_rim_dia / 2 + 0.4) * scale}` +
+      ` L ${zChamberEnd + 40} ${centerY - (reamer.pilot_diameter / 2) * scale}` +
+      ` L ${zChamberEnd} ${centerY - (reamer.pilot_diameter / 2) * scale}` +
+      ` ${[...topPts].reverse().join(' ')}` +
+      ` L ${originX - 20} ${centerY - (reamer.chamber_rim_dia / 2) * scale} Z`;
+
+    const botHatch =
+      `M ${originX - 20} ${centerY + (reamer.chamber_rim_dia / 2 + 0.4) * scale}` +
+      ` L ${zChamberEnd + 40} ${centerY + (reamer.chamber_rim_dia / 2 + 0.4) * scale}` +
+      ` L ${zChamberEnd + 40} ${centerY + (reamer.pilot_diameter / 2) * scale}` +
+      ` L ${zChamberEnd} ${centerY + (reamer.pilot_diameter / 2) * scale}` +
+      ` ${[...botPts].reverse().join(' ')}` +
+      ` L ${originX - 20} ${centerY + (reamer.chamber_rim_dia / 2) * scale} Z`;
+
+    return {
+      chamberTopPath: topPath,
+      chamberBottomPath: bottomPath,
+      chamberTopHatchPath: topHatch,
+      chamberBottomHatchPath: botHatch,
+    };
+  }, [needsChamber, cartridge, reamer, originX, centerY, scale, zChamberEnd]);
+
   const zBulletTip = originX + cartridge.coal * scale;
   const zBulletBase = originX + (cartridge.coal - cartridge.bullet_length) * scale;
   const rBullet = (cartridge.bullet_diameter / 2) * scale;
 
-  // Key coordinate milestones in pixels
   const effectiveShoulderLen = effectiveShoulderLength(cartridge);
   const pxRim = originX + cartridge.rim_thickness * scale;
   const pxExt = originX + (cartridge.rim_thickness + cartridge.extractor_width) * scale;
@@ -742,10 +644,8 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
   const pxMouth = zMouth;
   const pxTip = zBulletTip;
 
-  // Center coordinates for cartridge rotation
   const rotCenterX = originX + (pxTip - originX) / 2;
 
-  // Trigger dimension editing (with rotation coordinate translation)
   const handleDimensionClick = (
     e: React.MouseEvent,
     key: keyof CartridgeSpec,
@@ -763,14 +663,12 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
       ? +(currentInches * 25.4).toFixed(3)
       : +currentInches.toFixed(4);
 
-    // Translate coordinate if cartridge is rotated
     const rad = (rotation * Math.PI) / 180;
     const dx = svgX - rotCenterX;
     const dy = svgY - centerY;
     const rotX = rotCenterX + dx * Math.cos(rad) - dy * Math.sin(rad);
     const rotY = centerY + dx * Math.sin(rad) + dy * Math.cos(rad);
 
-    setPopoverPos(null);
     setEditingDim({
       key,
       label,
@@ -787,16 +685,12 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
     });
   };
 
-  // Ghost Cartridge Geometry (Comparison Overlay)
-  let ghostClosedPath = '';
-  let ghostBulletPath = '';
-  let ghostZHead = originX;
-  let ghostZTip = originX;
-
-  if (ghostCartridge) {
-    if (ghostAlign === 'head') {
-      ghostZHead = originX;
-    } else if (ghostAlign === 'mouth') {
+  const { ghostClosedPath, ghostBulletPath } = useMemo(() => {
+    if (!ghostCartridge) {
+      return { ghostClosedPath: '', ghostBulletPath: '' };
+    }
+    let ghostZHead = originX;
+    if (ghostAlign === 'mouth') {
       ghostZHead = originX + (cartridge.case_length - ghostCartridge.case_length) * scale;
     } else if (ghostAlign === 'shoulder') {
       ghostZHead = originX + (cartridge.body_length - ghostCartridge.body_length) * scale;
@@ -809,300 +703,20 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
       const z = i * gDz;
       ghostPts.push([ghostZHead + z * scale, getOuterRadiusAt(ghostCartridge, z) * scale]);
     }
-    ghostClosedPath = buildClosedSvgContour(
+    const closedPath = buildClosedSvgContour(
       ghostPts,
       (px, signedR) => `${px} ${centerY + signedR}`
     );
 
     const ghostZMouth = ghostZHead + ghostCartridge.case_length * scale;
-    ghostZTip = ghostZHead + ghostCartridge.coal * scale;
+    const ghostZTip = ghostZHead + ghostCartridge.coal * scale;
     const gRBullet = (ghostCartridge.bullet_diameter / 2) * scale;
+    const bulletPath = `M ${ghostZMouth} ${centerY - gRBullet} L ${ghostZTip} ${centerY} L ${ghostZMouth} ${centerY + gRBullet} Z`;
 
-    ghostBulletPath = `M ${ghostZMouth} ${centerY - gRBullet} L ${ghostZTip} ${centerY} L ${ghostZMouth} ${centerY + gRBullet} Z`;
-  }
+    return { ghostClosedPath: closedPath, ghostBulletPath: bulletPath };
+  }, [ghostCartridge, ghostAlign, cartridge.case_length, cartridge.body_length, originX, centerY, scale]);
 
-  // Wildcat Geometric Coupling Constraints
-  const [lockCaseLengthOnBodyChange, setLockCaseLengthOnBodyChange] = useState<boolean>(true);
-  const [preserveNeckWallOnBulletChange, setPreserveNeckWallOnBulletChange] = useState<boolean>(true);
-  const [selectedCaliberCategoryFilter, setSelectedCaliberCategoryFilter] = useState<string>('All');
-  const [bulletSearchQuery, setBulletSearchQuery] = useState<string>('');
-  const [applyBulletSeatingDepth, setApplyBulletSeatingDepth] = useState<boolean>(true);
-  const [isHoveringBullet, setIsHoveringBullet] = useState<boolean>(false);
-  const [appliedBulletNotification, setAppliedBulletNotification] = useState<{
-    id: string;
-    name: string;
-    caliber: number;
-    weight: number;
-    length: number;
-    coal: number;
-  } | null>(null);
-
-  const handleApplyBulletPreset = (bullet: BulletOption) => {
-    if (!onUpdateCartridge) return;
-    const inches = bullet.caliber_inches;
-    const seatDepth = (applyBulletSeatingDepth && bullet.recommended_seating_depth)
-      ? bullet.recommended_seating_depth
-      : (cartridge.seating_depth || 0.300);
-    const newCoal = +(cartridge.case_length + bullet.length_inches - seatDepth).toFixed(4);
-
-    let updated: CartridgeSpec = {
-      ...cartridge,
-      bullet_diameter: inches,
-      bullet_weight_grains: bullet.weight_grains,
-      bullet_length: bullet.length_inches,
-      seating_depth: seatDepth,
-      coal: newCoal,
-    };
-    if (preserveNeckWallOnBulletChange) {
-      const wallT = cartridge.neck_wall_thickness || 0.015;
-      const newMouth = +(inches + 2 * wallT).toFixed(4);
-      updated.neck_diameter_mouth = newMouth;
-      updated.neck_diameter_base = newMouth;
-    }
-    onUpdateCartridge(updated);
-    setAppliedBulletNotification({
-      id: bullet.id,
-      name: bullet.name,
-      caliber: bullet.caliber_inches,
-      weight: bullet.weight_grains,
-      length: bullet.length_inches,
-      coal: newCoal,
-    });
-    if (editingDim) {
-      const displayVal = isMetric ? +(inches * 25.4).toFixed(3) : inches;
-      setEditingDim(prev => prev ? { ...prev, displayVal } : null);
-    }
-  };
-
-  // Helper for SAAMI / CIP Manufacturing Tolerances and Stepper Ranges
-  const getDimToleranceInfo = (
-    key: keyof CartridgeSpec,
-    nominalInches: number,
-    isAngle = false
-  ) => {
-    let lowerTolInches = -0.0080;
-    let upperTolInches = 0.0000;
-
-    if (isAngle || key === 'shoulder_angle') {
-      lowerTolInches = -0.5;
-      upperTolInches = 0.5;
-    } else if (key === 'base_diameter' || key === 'shoulder_start_diameter') {
-      lowerTolInches = -0.0080;
-      upperTolInches = 0.0000;
-    } else if (key === 'rim_diameter' || key === 'rim_thickness' || key === 'extractor_diameter' || key === 'extractor_width') {
-      lowerTolInches = -0.0100;
-      upperTolInches = 0.0000;
-    } else if (key === 'neck_diameter_mouth' || key === 'neck_diameter_base') {
-      lowerTolInches = -0.0060;
-      upperTolInches = 0.0000;
-    } else if (key === 'bullet_diameter') {
-      lowerTolInches = -0.0030;
-      upperTolInches = 0.0000;
-    } else if (key === 'case_length' || key === 'coal') {
-      lowerTolInches = -0.0200;
-      upperTolInches = 0.0000;
-    } else if (key === 'body_length') {
-      lowerTolInches = -0.0150;
-      upperTolInches = 0.0000;
-    } else if (key === 'web_thickness') {
-      lowerTolInches = -0.0050;
-      upperTolInches = 0.0050;
-    } else if (key === 'neck_wall_thickness' || key === 'base_wall_thickness') {
-      lowerTolInches = -0.0015;
-      upperTolInches = 0.0015;
-    }
-
-    const lowerTol = isAngle ? lowerTolInches : isMetric ? +(lowerTolInches * 25.4).toFixed(2) : lowerTolInches;
-    const upperTol = isAngle ? upperTolInches : isMetric ? +(upperTolInches * 25.4).toFixed(2) : upperTolInches;
-    const nominal = isAngle ? nominalInches : isMetric ? +(nominalInches * 25.4).toFixed(3) : +nominalInches.toFixed(4);
-
-    const minVal = isAngle ? +(nominal + lowerTol).toFixed(1) : isMetric ? +(nominal + lowerTol).toFixed(3) : +(nominal + lowerTol).toFixed(4);
-    const maxVal = isAngle ? +(nominal + upperTol).toFixed(1) : isMetric ? +(nominal + upperTol).toFixed(3) : +(nominal + upperTol).toFixed(4);
-
-    const tolText = isAngle
-      ? `±${Math.abs(upperTol).toFixed(1)}°`
-      : isMetric
-      ? `+${upperTol >= 0 ? '+' : ''}${upperTol.toFixed(2)} / ${lowerTol.toFixed(2)} mm`
-      : `+${upperTol >= 0 ? '+' : ''}${upperTol.toFixed(4)}" / ${lowerTol.toFixed(4)}"`;
-
-    let sliderMin = isAngle ? Math.max(0, nominal - 20) : isMetric ? +(nominal * 0.70).toFixed(2) : +(nominal * 0.70).toFixed(4);
-    let sliderMax = isAngle ? Math.min(55, nominal + 20) : isMetric ? +(nominal * 1.35).toFixed(2) : +(nominal * 1.35).toFixed(4);
-    let sliderStep = isAngle ? 0.25 : isMetric ? 0.02 : 0.001;
-
-    if (key === 'bullet_diameter') {
-      sliderMin = isMetric ? 4.0 : 0.170;
-      sliderMax = isMetric ? 13.5 : 0.520;
-    } else if (key === 'shoulder_angle') {
-      sliderMin = 0.0;
-      sliderMax = 50.0;
-      sliderStep = 0.5;
-    }
-
-    return {
-      lowerTol,
-      upperTol,
-      tolText,
-      nominal,
-      minVal,
-      maxVal,
-      sliderMin,
-      sliderMax,
-      sliderStep,
-    };
-  };
-
-  const handleApplyDimChange = (newDisplayVal: number, recordHistory = true) => {
-    if (!editingDim || !onUpdateCartridge) return;
-    const inches = editingDim.isAngle
-      ? newDisplayVal
-      : isMetric
-      ? newDisplayVal / 25.4
-      : newDisplayVal;
-
-    let updated: CartridgeSpec = {
-      ...cartridge,
-      [editingDim.key]: inches,
-    };
-
-    // Geometric Constraint Coupling (Wildcat Studio CAD Solver)
-    if (editingDim.key === 'shoulder_angle') {
-      if (inches > 0.5) {
-        const neckBase = updated.neck_diameter_base || updated.neck_diameter_mouth;
-        const dr = (updated.shoulder_start_diameter - neckBase) / 2.0;
-        if (dr > 0.001) {
-          const rad = (inches * Math.PI) / 180;
-          updated.shoulder_length = +(dr / Math.tan(rad)).toFixed(4);
-        }
-      } else {
-        updated.shoulder_length = 0.0;
-      }
-    } else if (editingDim.key === 'shoulder_length') {
-      if (inches > 0.002) {
-        const neckBase = updated.neck_diameter_base || updated.neck_diameter_mouth;
-        const dr = (updated.shoulder_start_diameter - neckBase) / 2.0;
-        if (dr > 0.001) {
-          updated.shoulder_angle = +((Math.atan(dr / inches) * 180) / Math.PI).toFixed(1);
-        }
-      } else {
-        updated.shoulder_angle = 0.0;
-      }
-    } else if (editingDim.key === 'shoulder_start_diameter' || editingDim.key === 'neck_diameter_base') {
-      if (updated.shoulder_angle > 0.5) {
-        const neckBase = updated.neck_diameter_base || updated.neck_diameter_mouth;
-        const dr = (updated.shoulder_start_diameter - neckBase) / 2.0;
-        if (dr > 0.001) {
-          const rad = (updated.shoulder_angle * Math.PI) / 180;
-          updated.shoulder_length = +(dr / Math.tan(rad)).toFixed(4);
-        }
-      }
-    } else if (editingDim.key === 'body_length') {
-      if (!lockCaseLengthOnBodyChange) {
-        // Extend case length and COAL with body length to maintain neck length
-        const delta = inches - (cartridge.body_length || inches);
-        updated.case_length = Math.max(0.600, +(cartridge.case_length + delta).toFixed(4));
-        updated.coal = Math.max(updated.case_length + 0.100, +(cartridge.coal + delta).toFixed(4));
-      }
-    } else if (editingDim.key === 'bullet_diameter') {
-      if (preserveNeckWallOnBulletChange) {
-        // Automatically sync neck mouth diameter so neck wall remains constant
-        const wallT = cartridge.neck_wall_thickness || 0.015;
-        const newMouth = +(inches + 2 * wallT).toFixed(4);
-        updated.neck_diameter_mouth = newMouth;
-        updated.neck_diameter_base = newMouth;
-      }
-    } else if (editingDim.key === 'case_length') {
-      if (updated.coal < inches + 0.100) {
-        updated.coal = +(inches + 0.350).toFixed(4);
-      }
-    }
-
-    onUpdateCartridge(updated);
-    setEditingDim((prev) => {
-      if (!prev) return null;
-      const history = recordHistory ? [...prev.history, newDisplayVal] : prev.history;
-      return { ...prev, displayVal: newDisplayVal, draftValue: undefined, history };
-    });
-  };
-
-  const handleInputWheel = (e: React.WheelEvent<HTMLInputElement>) => {
-    e.preventDefault();
-    if (!editingDim) return;
-    const mult = e.shiftKey ? 10 : e.altKey ? 0.5 : 1;
-    const baseStep = editingDim.isAngle ? 0.5 : isMetric ? 0.05 : 0.001;
-    const step = baseStep * mult;
-    const dir = e.deltaY < 0 ? 1 : -1;
-    const newVal = +(editingDim.displayVal + dir * step).toFixed(editingDim.isAngle ? 1 : isMetric ? 3 : 4);
-    handleApplyDimChange(newVal);
-  };
-
-  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!editingDim) return;
-    if (e.key === 'Enter') {
-      handleCommitAndClose();
-    } else if (e.key === 'Escape') {
-      handleRevertAndClose();
-    } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
-      e.preventDefault();
-      handleUndoDimStep();
-    } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-      e.preventDefault();
-      const mult = e.shiftKey ? 10 : e.altKey ? 0.5 : 1;
-      const baseStep = editingDim.isAngle ? 0.5 : isMetric ? 0.05 : 0.001;
-      const step = baseStep * mult;
-      const dir = e.key === 'ArrowUp' ? 1 : -1;
-      const newVal = +(editingDim.displayVal + dir * step).toFixed(editingDim.isAngle ? 1 : isMetric ? 3 : 4);
-      handleApplyDimChange(newVal);
-    }
-  };
-
-  const handleUndoDimStep = () => {
-    if (!editingDim || editingDim.history.length <= 1) return;
-    const newHistory = [...editingDim.history];
-    newHistory.pop(); // discard current
-    const previousVal = newHistory[newHistory.length - 1];
-    handleApplyDimChange(previousVal, false);
-  };
-
-  const handleUndoToInitial = () => {
-    if (!editingDim || !onUpdateCartridge) return;
-    const initialDisplay = editingDim.isAngle
-      ? editingDim.initialValInches
-      : isMetric
-      ? +(editingDim.initialValInches * 25.4).toFixed(3)
-      : +editingDim.initialValInches.toFixed(4);
-
-    handleApplyDimChange(initialDisplay, true);
-  };
-
-  const handleResetToPreset = () => {
-    if (!editingDim || !onUpdateCartridge) return;
-    const preset = CARTRIDGE_PRESETS[cartridge.id];
-    if (!preset) return;
-    const presetInches = preset[editingDim.key] as number;
-    const presetDisplay = editingDim.isAngle
-      ? presetInches
-      : isMetric
-      ? +(presetInches * 25.4).toFixed(3)
-      : +presetInches.toFixed(4);
-
-    handleApplyDimChange(presetDisplay, true);
-  };
-
-  const closePopover = () => {
-    setEditingDim(null);
-    setPopoverPos(null);
-  };
-
-  const handleCommitAndClose = () => {
-    closePopover();
-  };
-
-  const handleRevertAndClose = () => {
-    if (editingDim && onUpdateCartridge) {
-      onUpdateCartridge({ ...editingDim.initialSnapshot });
-    }
-    closePopover();
-  };
+  const hasCenterfirePrimer = cartridge.rim_type !== 'rimfire';
 
   // Helper to render interactive clickable dimension badge on canvas
   const renderDimensionBadge = (
@@ -1185,590 +799,22 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
         cursor: isDragging ? 'grabbing' : 'grab',
       }}
     >
-      {/* CAD Drawing Mode & Layer Pill Bar (Top-Left, Collapsible with Dropdowns) */}
-      {isToolbarCollapsed ? (
-        <div
-          id="cad-mode-toolbar-collapsed"
-          style={{
-            position: 'absolute',
-            top: '16px',
-            left: '16px',
-            zIndex: 20,
-          }}
-        >
-          <button
-            id="btn-expand-cad-toolbar"
-            onClick={toggleToolbarCollapse}
-            title="Expand CAD Drafting Tools & Layers"
-            style={{
-              background: 'rgba(15, 20, 31, 0.92)',
-              WebkitBackdropFilter: 'blur(10px)',
-              backdropFilter: 'blur(10px)',
-              border: '1px solid var(--border-color)',
-              borderRadius: '6px',
-              padding: '5px 10px',
-              color: 'var(--cad-cyan)',
-              fontSize: '11px',
-              fontWeight: 600,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              cursor: 'pointer',
-              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.5)',
-              transition: 'all 0.15s',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = 'var(--cad-cyan)';
-              e.currentTarget.style.background = 'rgba(20, 30, 48, 0.95)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = 'var(--border-color)';
-              e.currentTarget.style.background = 'rgba(15, 20, 31, 0.92)';
-            }}
-          >
-            <Sliders size={13} />
-            <span>CAD Tools</span>
-            <ChevronRight size={13} color="var(--text-muted)" />
-          </button>
-        </div>
-      ) : (
-        <div
-          ref={toolbarRef}
-          id="cad-mode-toolbar"
-          style={{
-            position: 'absolute',
-            top: '16px',
-            left: '16px',
-            zIndex: 20,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '5px',
-            background: 'rgba(15, 20, 31, 0.94)',
-            WebkitBackdropFilter: 'blur(12px)',
-            backdropFilter: 'blur(12px)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '8px',
-            padding: '4px 6px',
-            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.6)',
-          }}
-        >
-          {/* Collapse Toggle Button */}
-          <button
-            id="btn-collapse-cad-toolbar"
-            onClick={toggleToolbarCollapse}
-            title="Collapse CAD Toolbar to Save Canvas Space"
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--text-muted)',
-              cursor: 'pointer',
-              padding: '4px',
-              borderRadius: '4px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              transition: 'all 0.12s',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.color = '#fff';
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.color = 'var(--text-muted)';
-              e.currentTarget.style.background = 'transparent';
-            }}
-          >
-            <ChevronLeft size={14} />
-          </button>
-
-          {/* Separator */}
-          <div style={{ width: '1px', height: '16px', background: 'var(--border-color)', margin: '0 2px' }} />
-
-          {/* Mode Dropdown Button */}
-          <div style={{ position: 'relative' }}>
-            {(() => {
-              const currentMode = MODE_ITEMS.find((m) => m.id === activeDrawingMode) || MODE_ITEMS[0];
-              const ModeIcon = currentMode.icon;
-              return (
-                <button
-                  id="btn-mode-dropdown"
-                  onClick={() => setActiveDropdown(activeDropdown === 'mode' ? null : 'mode')}
-                  title="Select 2D Vector CAD Drafting Mode"
-                  style={{
-                    background: 'rgba(0, 210, 255, 0.12)',
-                    border: '1px solid rgba(0, 210, 255, 0.3)',
-                    borderRadius: '4px',
-                    color: 'var(--cad-cyan)',
-                    padding: '4px 8px',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                    cursor: 'pointer',
-                    transition: 'all 0.12s',
-                  }}
-                >
-                  <ModeIcon size={12} strokeWidth={2.4} />
-                  <span>{currentMode.label}</span>
-                  <ChevronDown
-                    size={11}
-                    style={{
-                      transform: activeDropdown === 'mode' ? 'rotate(180deg)' : 'none',
-                      transition: 'transform 0.15s',
-                    }}
-                  />
-                </button>
-              );
-            })()}
-
-            {/* Mode Dropdown Floating Menu */}
-            {activeDropdown === 'mode' && (
-              <div
-                style={{
-                  position: 'absolute',
-                  top: 'calc(100% + 6px)',
-                  left: 0,
-                  background: 'rgba(15, 23, 42, 0.98)',
-                  WebkitBackdropFilter: 'blur(16px)',
-                  backdropFilter: 'blur(16px)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '6px',
-                  padding: '4px',
-                  minWidth: '220px',
-                  boxShadow: '0 12px 30px rgba(0, 0, 0, 0.8), 0 0 16px rgba(0, 210, 255, 0.15)',
-                  zIndex: 100,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '2px',
-                }}
-              >
-                <div style={{ fontSize: '9.5px', fontWeight: 700, color: 'var(--text-muted)', padding: '4px 8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  CAD Drafting Mode
-                </div>
-                {MODE_ITEMS.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = activeDrawingMode === item.id;
-                  return (
-                    <button
-                      key={item.id}
-                      id={`btn-mode-select-${item.id}`}
-                      onClick={() => {
-                        handleSetDrawingMode(item.id);
-                        setActiveDropdown(null);
-                      }}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        padding: '6px 8px',
-                        borderRadius: '4px',
-                        background: isActive ? 'rgba(0, 210, 255, 0.15)' : 'transparent',
-                        border: 'none',
-                        color: isActive ? 'var(--cad-cyan)' : 'var(--text-primary)',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        transition: 'background 0.1s',
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!isActive) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)';
-                      }}
-                      onMouseLeave={(e) => {
-                        if (!isActive) e.currentTarget.style.background = 'transparent';
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <Icon size={14} strokeWidth={isActive ? 2.5 : 2} color={isActive ? 'var(--cad-cyan)' : 'var(--text-secondary)'} />
-                        <div>
-                          <div style={{ fontSize: '11px', fontWeight: isActive ? 700 : 500 }}>{item.label}</div>
-                          <div style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>{item.desc}</div>
-                        </div>
-                      </div>
-                      {isActive && <Check size={12} color="var(--cad-cyan)" strokeWidth={2.5} />}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Separator */}
-          <div style={{ width: '1px', height: '16px', background: 'var(--border-color)', margin: '0 2px' }} />
-
-          {/* Layers Dropdown Button */}
-          <div style={{ position: 'relative' }}>
-            {(() => {
-              const activeCount = [activeShowChamber, activeShowDimensions, activeShowBullet, activeShowGrid].filter(Boolean).length;
-              return (
-                <button
-                  id="btn-layers-dropdown"
-                  onClick={() => setActiveDropdown(activeDropdown === 'layers' ? null : 'layers')}
-                  title="Toggle Blueprint Layer Overlays"
-                  style={{
-                    background: activeCount > 0 ? 'rgba(255, 255, 255, 0.06)' : 'transparent',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '4px',
-                    color: 'var(--text-primary)',
-                    padding: '4px 8px',
-                    fontSize: '11px',
-                    fontWeight: 500,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                    cursor: 'pointer',
-                    transition: 'all 0.12s',
-                  }}
-                >
-                  <Layers size={12} strokeWidth={2} color="var(--cad-cyan)" />
-                  <span>Layers</span>
-                  <span
-                    style={{
-                      fontSize: '9.5px',
-                      fontFamily: 'var(--font-mono)',
-                      background: 'rgba(0, 210, 255, 0.18)',
-                      color: 'var(--cad-cyan)',
-                      padding: '1px 4px',
-                      borderRadius: '3px',
-                      fontWeight: 700,
-                    }}
-                  >
-                    {activeCount}/4
-                  </span>
-                  <ChevronDown
-                    size={11}
-                    style={{
-                      transform: activeDropdown === 'layers' ? 'rotate(180deg)' : 'none',
-                      transition: 'transform 0.15s',
-                    }}
-                  />
-                </button>
-              );
-            })()}
-
-            {/* Layers Dropdown Floating Menu */}
-            {activeDropdown === 'layers' && (
-              <div
-                style={{
-                  position: 'absolute',
-                  top: 'calc(100% + 6px)',
-                  left: 0,
-                  background: 'rgba(15, 23, 42, 0.98)',
-                  WebkitBackdropFilter: 'blur(16px)',
-                  backdropFilter: 'blur(16px)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '6px',
-                  padding: '4px',
-                  minWidth: '210px',
-                  boxShadow: '0 12px 30px rgba(0, 0, 0, 0.8), 0 0 16px rgba(0, 210, 255, 0.15)',
-                  zIndex: 100,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '2px',
-                }}
-              >
-                <div style={{ fontSize: '9.5px', fontWeight: 700, color: 'var(--text-muted)', padding: '4px 8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  Visibility Layers
-                </div>
-
-                {/* Chamber Layer */}
-                <button
-                  id="btn-toggle-chamber"
-                  onClick={handleToggleChamber}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '6px 8px',
-                    borderRadius: '4px',
-                    background: activeShowChamber ? 'rgba(234, 179, 8, 0.15)' : 'transparent',
-                    border: 'none',
-                    color: activeShowChamber ? '#eab308' : 'var(--text-secondary)',
-                    cursor: 'pointer',
-                    fontSize: '11px',
-                    fontWeight: activeShowChamber ? 700 : 500,
-                    transition: 'background 0.1s',
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!activeShowChamber) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)';
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!activeShowChamber) e.currentTarget.style.background = 'transparent';
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Shield size={13} strokeWidth={2.2} color={activeShowChamber ? '#eab308' : 'var(--text-muted)'} />
-                    <span>Chamber Overlay</span>
-                  </div>
-                  <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
-                    {activeShowChamber ? 'ON' : 'OFF'}
-                  </span>
-                </button>
-
-                {/* Dimensions Layer */}
-                <button
-                  id="btn-toggle-dimensions"
-                  onClick={handleToggleDimensions}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '6px 8px',
-                    borderRadius: '4px',
-                    background: activeShowDimensions ? 'rgba(0, 210, 255, 0.15)' : 'transparent',
-                    border: 'none',
-                    color: activeShowDimensions ? 'var(--cad-cyan)' : 'var(--text-secondary)',
-                    cursor: 'pointer',
-                    fontSize: '11px',
-                    fontWeight: activeShowDimensions ? 700 : 500,
-                    transition: 'background 0.1s',
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!activeShowDimensions) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)';
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!activeShowDimensions) e.currentTarget.style.background = 'transparent';
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Compass size={13} strokeWidth={2.2} color={activeShowDimensions ? 'var(--cad-cyan)' : 'var(--text-muted)'} />
-                    <span>Dimension Callouts</span>
-                  </div>
-                  <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
-                    {activeShowDimensions ? 'ON' : 'OFF'}
-                  </span>
-                </button>
-
-                {/* Bullet Layer */}
-                <button
-                  id="btn-toggle-bullet"
-                  onClick={handleToggleBullet}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '6px 8px',
-                    borderRadius: '4px',
-                    background: activeShowBullet ? 'rgba(240, 136, 62, 0.15)' : 'transparent',
-                    border: 'none',
-                    color: activeShowBullet ? 'var(--cad-copper)' : 'var(--text-secondary)',
-                    cursor: 'pointer',
-                    fontSize: '11px',
-                    fontWeight: activeShowBullet ? 700 : 500,
-                    transition: 'background 0.1s',
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!activeShowBullet) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)';
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!activeShowBullet) e.currentTarget.style.background = 'transparent';
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    {activeShowBullet ? <Eye size={13} strokeWidth={2.2} color="var(--cad-copper)" /> : <EyeOff size={13} strokeWidth={2.2} color="var(--text-muted)" />}
-                    <span>Seated Bullet</span>
-                  </div>
-                  <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
-                    {activeShowBullet ? 'ON' : 'OFF'}
-                  </span>
-                </button>
-
-                {/* Grid Layer */}
-                <button
-                  id="btn-toggle-grid"
-                  onClick={handleToggleGrid}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '6px 8px',
-                    borderRadius: '4px',
-                    background: activeShowGrid ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
-                    border: 'none',
-                    color: activeShowGrid ? '#fff' : 'var(--text-secondary)',
-                    cursor: 'pointer',
-                    fontSize: '11px',
-                    fontWeight: activeShowGrid ? 700 : 500,
-                    transition: 'background 0.1s',
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!activeShowGrid) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)';
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!activeShowGrid) e.currentTarget.style.background = 'transparent';
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Grid size={13} strokeWidth={2.2} color={activeShowGrid ? '#fff' : 'var(--text-muted)'} />
-                    <span>CAD Gridlines</span>
-                  </div>
-                  <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
-                    {activeShowGrid ? 'ON' : 'OFF'}
-                  </span>
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Separator */}
-          <div style={{ width: '1px', height: '16px', background: 'var(--border-color)', margin: '0 2px' }} />
-
-          {/* Dual Standard Pill (SAAMI vs CIP) */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              background: 'rgba(0, 0, 0, 0.3)',
-              borderRadius: '4px',
-              border: '1px solid var(--border-color)',
-              padding: '1px',
-            }}
-          >
-            <button
-              id="btn-std-saami"
-              onClick={() => handleSetStandard('saami')}
-              title="American SAAMI Standard (Datum Headspace Circle, Inches, ANSI Callouts)"
-              style={{
-                background: activeStandard === 'saami' ? 'rgba(59, 130, 246, 0.3)' : 'transparent',
-                border: 'none',
-                borderRadius: '3px',
-                color: activeStandard === 'saami' ? '#60a5fa' : 'var(--text-muted)',
-                padding: '3px 6px',
-                fontSize: '10px',
-                fontWeight: activeStandard === 'saami' ? 700 : 500,
-                cursor: 'pointer',
-                transition: 'all 0.1s',
-              }}
-            >
-              SAAMI
-            </button>
-            <button
-              id="btn-std-cip"
-              onClick={() => handleSetStandard('cip')}
-              title="European C.I.P. Standard (L1-L6, P1-P2, H1-H2, Delta L Safety)"
-              style={{
-                background: activeStandard === 'cip' ? 'rgba(168, 85, 247, 0.3)' : 'transparent',
-                border: 'none',
-                borderRadius: '3px',
-                color: activeStandard === 'cip' ? '#c084fc' : 'var(--text-muted)',
-                padding: '3px 6px',
-                fontSize: '10px',
-                fontWeight: activeStandard === 'cip' ? 700 : 500,
-                cursor: 'pointer',
-                transition: 'all 0.1s',
-              }}
-            >
-              C.I.P.
-            </button>
-          </div>
-
-          {/* Separator */}
-          <div style={{ width: '1px', height: '16px', background: 'var(--border-color)', margin: '0 2px' }} />
-
-          {/* Manufacturing Tolerance Selector Dropdown */}
-          <div style={{ position: 'relative' }}>
-            {(() => {
-              const currentTol = TOL_ITEMS.find((t) => t.id === activeTolerance) || TOL_ITEMS[0];
-              const isNonNominal = activeTolerance !== 'nominal';
-              return (
-                <button
-                  id="btn-tol-dropdown"
-                  onClick={() => setActiveDropdown(activeDropdown === 'tolerance' ? null : 'tolerance')}
-                  title="Select Blueprint Tolerance Condition (MMC / LMC / Clearance)"
-                  style={{
-                    background: isNonNominal ? 'rgba(16, 185, 129, 0.2)' : 'transparent',
-                    border: `1px solid ${isNonNominal ? '#10b981' : 'var(--border-color)'}`,
-                    borderRadius: '4px',
-                    color: isNonNominal ? '#34d399' : 'var(--text-secondary)',
-                    padding: '4px 7px',
-                    fontSize: '11px',
-                    fontWeight: isNonNominal ? 700 : 500,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    cursor: 'pointer',
-                    transition: 'all 0.12s',
-                  }}
-                >
-                  <Scale size={12} color={isNonNominal ? '#34d399' : 'var(--text-muted)'} />
-                  <span>{currentTol.short}</span>
-                  <ChevronDown
-                    size={11}
-                    style={{
-                      transform: activeDropdown === 'tolerance' ? 'rotate(180deg)' : 'none',
-                      transition: 'transform 0.15s',
-                    }}
-                  />
-                </button>
-              );
-            })()}
-
-            {/* Tolerance Dropdown Floating Menu */}
-            {activeDropdown === 'tolerance' && (
-              <div
-                style={{
-                  position: 'absolute',
-                  top: 'calc(100% + 6px)',
-                  right: 0,
-                  background: 'rgba(15, 23, 42, 0.98)',
-                  WebkitBackdropFilter: 'blur(16px)',
-                  backdropFilter: 'blur(16px)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '6px',
-                  padding: '4px',
-                  minWidth: '230px',
-                  boxShadow: '0 12px 30px rgba(0, 0, 0, 0.8), 0 0 16px rgba(16, 185, 129, 0.15)',
-                  zIndex: 100,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '2px',
-                }}
-              >
-                <div style={{ fontSize: '9.5px', fontWeight: 700, color: 'var(--text-muted)', padding: '4px 8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  Manufacturing Tolerance Matrix
-                </div>
-                {TOL_ITEMS.map((tol) => {
-                  const isActive = activeTolerance === tol.id;
-                  return (
-                    <button
-                      key={tol.id}
-                      id={`btn-tol-select-${tol.id}`}
-                      onClick={() => {
-                        handleSetTolerance(tol.id);
-                        setActiveDropdown(null);
-                      }}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        padding: '6px 8px',
-                        borderRadius: '4px',
-                        background: isActive ? 'rgba(16, 185, 129, 0.18)' : 'transparent',
-                        border: 'none',
-                        color: isActive ? '#34d399' : 'var(--text-primary)',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        transition: 'background 0.1s',
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!isActive) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)';
-                      }}
-                      onMouseLeave={(e) => {
-                        if (!isActive) e.currentTarget.style.background = 'transparent';
-                      }}
-                    >
-                      <div>
-                        <div style={{ fontSize: '11px', fontWeight: isActive ? 700 : 500 }}>{tol.label}</div>
-                        <div style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>{tol.desc}</div>
-                      </div>
-                      {isActive && <Check size={12} color="#34d399" strokeWidth={2.5} />}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      <BlueprintToolbar
+        activeDrawingMode={activeDrawingMode}
+        onSetDrawingMode={handleSetDrawingMode}
+        activeShowChamber={activeShowChamber}
+        onToggleChamber={handleToggleChamber}
+        activeShowDimensions={activeShowDimensions}
+        onToggleDimensions={handleToggleDimensions}
+        activeShowBullet={activeShowBullet}
+        onToggleBullet={handleToggleBullet}
+        activeShowGrid={activeShowGrid}
+        onToggleGrid={handleToggleGrid}
+        activeStandard={activeStandard}
+        onSetStandard={handleSetStandard}
+        activeTolerance={activeTolerance}
+        onSetTolerance={handleSetTolerance}
+      />
 
       {/* CAD Canvas Navigation & Rotate Overlay (Bottom-Right) */}
       <div style={{
@@ -2097,9 +1143,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
       })()}
 
       {/* Floating Ghost Comparison Delta HUD */}
-      {ghostCartridge && (() => {
-        const activeVol = calculateVolumetrics(cartridge);
-        const ghostVol = calculateVolumetrics(ghostCartridge);
+      {ghostCartridge && ghostVol && (() => {
         const capDiff = activeVol.overflow_capacity_grains_h2o - ghostVol.overflow_capacity_grains_h2o;
         const lenDiff = cartridge.case_length - ghostCartridge.case_length;
         const coalDiff = cartridge.coal - ghostCartridge.coal;
@@ -2375,1250 +1419,20 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
         </>
       )}
 
-      {/* FLOATING IN-DIAGRAM PRECISION DIMENSION EDITOR - Wildcat Studio CAD Suite */}
-      {editingDim && (() => {
-        const tolInfo = getDimToleranceInfo(editingDim.key, editingDim.initialValInches, editingDim.isAngle);
-        const preset = CARTRIDGE_PRESETS[cartridge.id];
-        const presetInches = preset ? (preset[editingDim.key] as number) : undefined;
-        const presetDisplay = presetInches !== undefined ? (
-          editingDim.isAngle
-            ? presetInches
-            : isMetric
-            ? +(presetInches * 25.4).toFixed(3)
-            : +presetInches.toFixed(4)
-        ) : undefined;
-
-        const initialDisplay = editingDim.isAngle
-          ? editingDim.initialValInches
-          : isMetric
-          ? +(editingDim.initialValInches * 25.4).toFixed(3)
-          : +editingDim.initialValInches.toFixed(4);
-        const isDifferentFromInitial = Math.abs(editingDim.displayVal - initialDisplay) > 0.0001;
-        const isDifferentFromPreset = presetDisplay !== undefined && Math.abs(editingDim.displayVal - presetDisplay) > 0.0001;
-
-        // Chamber Reamer & Clearance Telemetry
-        const reamer = calculateReamerSpecs(cartridge);
-        let chamberClearanceInches: number | null = null;
-        let reamerChamberVal: number | null = null;
-        let clearanceFeatureLabel = '';
-
-        if (editingDim.key === 'base_diameter') {
-          reamerChamberVal = reamer.chamber_base_dia;
-          chamberClearanceInches = +(reamer.chamber_base_dia - cartridge.base_diameter).toFixed(4);
-          clearanceFeatureLabel = 'P₁ Base Dia Clearance';
-        } else if (editingDim.key === 'shoulder_start_diameter') {
-          reamerChamberVal = reamer.chamber_shoulder_dia;
-          chamberClearanceInches = +(reamer.chamber_shoulder_dia - cartridge.shoulder_start_diameter).toFixed(4);
-          clearanceFeatureLabel = 'P₂ Shoulder Dia Clearance';
-        } else if (editingDim.key === 'neck_diameter_mouth') {
-          reamerChamberVal = reamer.chamber_neck_dia;
-          chamberClearanceInches = +(reamer.chamber_neck_dia - cartridge.neck_diameter_mouth).toFixed(4);
-          clearanceFeatureLabel = 'H₂ Neck Expansion Clearance';
-        } else if (editingDim.key === 'case_length') {
-          reamerChamberVal = reamer.chamber_length;
-          chamberClearanceInches = +(reamer.chamber_length - cartridge.case_length).toFixed(4);
-          clearanceFeatureLabel = 'L₃ Chamber Mouth Clearance';
-        } else if (editingDim.key === 'rim_diameter') {
-          reamerChamberVal = reamer.chamber_rim_dia;
-          chamberClearanceInches = +(reamer.chamber_rim_dia - cartridge.rim_diameter).toFixed(4);
-          clearanceFeatureLabel = 'R₁ Rim Recess Clearance';
-        } else if (editingDim.key === 'rim_thickness') {
-          reamerChamberVal = reamer.chamber_rim_depth;
-          chamberClearanceInches = +(reamer.chamber_rim_depth - cartridge.rim_thickness).toFixed(4);
-          clearanceFeatureLabel = 'R Rim Depth Headspace Gap';
-        } else if (editingDim.key === 'bullet_diameter') {
-          reamerChamberVal = reamer.freebore_dia;
-          chamberClearanceInches = +(reamer.freebore_dia - cartridge.bullet_diameter).toFixed(4);
-          clearanceFeatureLabel = 'Freebore Leade Diametral Clearance';
-        }
-
-        // Live Volumetric Telemetry
-        const currentVol = calculateVolumetrics(cartridge);
-        const initialCartridge = {
-          ...cartridge,
-          [editingDim.key]: editingDim.initialValInches,
-        };
-        const initialVol = calculateVolumetrics(initialCartridge);
-        const deltaGrains = +(currentVol.overflow_capacity_grains_h2o - initialVol.overflow_capacity_grains_h2o).toFixed(2);
-        const deltaPercent = initialVol.overflow_capacity_grains_h2o > 0
-          ? +((deltaGrains / initialVol.overflow_capacity_grains_h2o) * 100).toFixed(1)
-          : 0;
-
-        const popoverWidth = editingDim.key === 'bullet_diameter' ? 420 : 350;
-        const maxAvailableHeight = Math.max(300, window.innerHeight - 65);
-        const popoverHeight = Math.min(editingDim.key === 'bullet_diameter' ? 560 : 480, maxAvailableHeight);
-        const targetX = editingDim.clientX ?? (editingDim.svgX + pan.x);
-        const targetY = editingDim.clientY ?? (editingDim.svgY + pan.y);
-        const spawnY = targetY > window.innerHeight * 0.5 ? targetY - popoverHeight - 16 : targetY + 20;
-        const defaultLeft = Math.max(16, Math.min(window.innerWidth - popoverWidth - 16, targetX - popoverWidth / 2));
-        const defaultTop = Math.max(48, Math.min(window.innerHeight - popoverHeight - 12, spawnY));
-
-        return createPortal(
-          <div
-            id="draggable-dimension-popover"
-            onMouseDown={(e) => e.stopPropagation()}
-            style={{
-              position: 'fixed',
-              left: popoverPos ? popoverPos.x : defaultLeft,
-              top: popoverPos ? popoverPos.y : defaultTop,
-              zIndex: 2500,
-              background: 'rgba(13, 17, 26, 0.98)',
-              WebkitBackdropFilter: 'blur(16px)',
-              backdropFilter: 'blur(16px)',
-              border: `1.5px solid ${isDraggingPopover ? '#fff' : 'var(--cad-cyan)'}`,
-              borderRadius: '8px',
-              padding: '10px 12px',
-              boxShadow: isDraggingPopover
-                ? '0 16px 48px rgba(0, 0, 0, 0.95), 0 0 28px rgba(0, 210, 255, 0.55)'
-                : '0 10px 36px rgba(0, 0, 0, 0.85), 0 0 20px rgba(0, 210, 255, 0.3)',
-              width: `${popoverWidth}px`,
-              maxHeight: `${maxAvailableHeight}px`,
-              boxSizing: 'border-box',
-              display: 'flex',
-              flexDirection: 'column',
-              overflow: 'hidden',
-              userSelect: isDraggingPopover ? 'none' : 'auto',
-            }}
-          >
-            {/* Draggable CAD Header (Pinned) */}
-            <div 
-              onMouseDown={handlePopoverMouseDown}
-              title="Drag to move this dimension editor anywhere on screen"
-              style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'space-between',
-                cursor: isDraggingPopover ? 'grabbing' : 'grab',
-                paddingBottom: '6px',
-                marginBottom: '6px',
-                borderBottom: '1px solid rgba(0, 210, 255, 0.22)',
-                userSelect: 'none',
-                flexShrink: 0
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-                <GripVertical size={14} color="var(--cad-cyan)" style={{ opacity: 0.8, flexShrink: 0 }} />
-                <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--cad-cyan)', letterSpacing: '0.4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  EDIT {editingDim.symbol}: {editingDim.label.toUpperCase()}
-                </span>
-                <span style={{
-                  fontSize: '9px',
-                  fontWeight: 700,
-                  padding: '1px 5px',
-                  borderRadius: '3px',
-                  background: 'rgba(0, 210, 255, 0.12)',
-                  color: 'var(--cad-cyan)',
-                  border: '1px solid rgba(0, 210, 255, 0.3)',
-                  flexShrink: 0
-                }}>
-                  {activeStandard.toUpperCase()}
-                </span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
-                {popoverPos && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); setPopoverPos(null); }}
-                    title="Snap popover back near dimension line"
-                    style={{
-                      background: 'transparent',
-                      border: 'none',
-                      color: 'var(--text-muted)',
-                      cursor: 'pointer',
-                      padding: '2px 4px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      borderRadius: '3px',
-                      fontSize: '10px'
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.color = 'var(--cad-cyan)'}
-                    onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
-                  >
-                    <Crosshair size={12} />
-                  </button>
-                )}
-                <button
-                  id="btn-close-measurement-popover"
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); handleRevertAndClose(); }}
-                  title="Close editor (Esc)"
-                  style={{ 
-                    background: 'transparent', 
-                    border: 'none', 
-                    color: 'var(--text-muted)', 
-                    cursor: 'pointer',
-                    padding: '2px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    borderRadius: '3px'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.color = '#fff'}
-                  onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
-                >
-                  <X size={14} />
-                </button>
-              </div>
-            </div>
-
-            {/* Scrollable Controls Body */}
-            <div style={{
-              flex: 1,
-              minHeight: 0,
-              overflowY: 'auto',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '7px',
-              paddingRight: '2px'
-            }}>
-              {/* Tolerance Standard & Direct Limit Jumping (LMC / Nominal / MMC) */}
-              <div style={{
-                background: 'rgba(0, 0, 0, 0.35)',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
-                borderRadius: '5px',
-                padding: '5px 7px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '4px'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '9.5px' }}>
-                  <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>SPEC TOLERANCE:</span>
-                  <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--cad-cyan)', fontWeight: 700 }}>
-                    {tolInfo.tolText}
-                  </span>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
-                  <button
-                    id="btn-tol-min-lmc"
-                    type="button"
-                    onClick={() => handleApplyDimChange(tolInfo.minVal)}
-                    title={`Jump to Minimum Material Condition (LMC) [${tolInfo.minVal}${editingDim.isAngle ? '°' : isMetric ? 'mm' : '"'}]`}
-                    style={{
-                      background: Math.abs(editingDim.displayVal - tolInfo.minVal) < 0.0001 ? 'rgba(0, 210, 255, 0.25)' : 'rgba(255, 255, 255, 0.04)',
-                      border: `1px solid ${Math.abs(editingDim.displayVal - tolInfo.minVal) < 0.0001 ? 'var(--cad-cyan)' : 'rgba(255, 255, 255, 0.1)'}`,
-                      color: Math.abs(editingDim.displayVal - tolInfo.minVal) < 0.0001 ? '#fff' : 'var(--text-secondary)',
-                      borderRadius: '4px',
-                      padding: '3px 2px',
-                      fontSize: '9px',
-                      fontWeight: 600,
-                      fontFamily: 'var(--font-mono)',
-                      cursor: 'pointer',
-                      textAlign: 'center'
-                    }}
-                  >
-                    Min: {tolInfo.minVal}
-                  </button>
-                  <button
-                    id="btn-tol-nominal"
-                    type="button"
-                    onClick={() => handleApplyDimChange(tolInfo.nominal)}
-                    title={`Jump to Blueprint Nominal Reference Spec [${tolInfo.nominal}${editingDim.isAngle ? '°' : isMetric ? 'mm' : '"'}]`}
-                    style={{
-                      background: Math.abs(editingDim.displayVal - tolInfo.nominal) < 0.0001 ? 'rgba(0, 210, 255, 0.25)' : 'rgba(255, 255, 255, 0.04)',
-                      border: `1px solid ${Math.abs(editingDim.displayVal - tolInfo.nominal) < 0.0001 ? 'var(--cad-cyan)' : 'rgba(255, 255, 255, 0.1)'}`,
-                      color: Math.abs(editingDim.displayVal - tolInfo.nominal) < 0.0001 ? '#fff' : 'var(--text-secondary)',
-                      borderRadius: '4px',
-                      padding: '3px 2px',
-                      fontSize: '9px',
-                      fontWeight: 700,
-                      fontFamily: 'var(--font-mono)',
-                      cursor: 'pointer',
-                      textAlign: 'center'
-                    }}
-                  >
-                    Nom: {tolInfo.nominal}
-                  </button>
-                  <button
-                    id="btn-tol-max-mmc"
-                    type="button"
-                    onClick={() => handleApplyDimChange(tolInfo.maxVal)}
-                    title={`Jump to Maximum Material Condition (MMC) [${tolInfo.maxVal}${editingDim.isAngle ? '°' : isMetric ? 'mm' : '"'}]`}
-                    style={{
-                      background: Math.abs(editingDim.displayVal - tolInfo.maxVal) < 0.0001 ? 'rgba(0, 210, 255, 0.25)' : 'rgba(255, 255, 255, 0.04)',
-                      border: `1px solid ${Math.abs(editingDim.displayVal - tolInfo.maxVal) < 0.0001 ? 'var(--cad-cyan)' : 'rgba(255, 255, 255, 0.1)'}`,
-                      color: Math.abs(editingDim.displayVal - tolInfo.maxVal) < 0.0001 ? '#fff' : 'var(--text-secondary)',
-                      borderRadius: '4px',
-                      padding: '3px 2px',
-                      fontSize: '9px',
-                      fontWeight: 600,
-                      fontFamily: 'var(--font-mono)',
-                      cursor: 'pointer',
-                      textAlign: 'center'
-                    }}
-                  >
-                    Max: {tolInfo.maxVal}
-                  </button>
-                </div>
-              </div>
-
-              {/* Primary Digital Display & Scrubber Controls */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flexShrink: 0 }}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const step = editingDim.isAngle ? 0.5 : isMetric ? 0.05 : 0.001;
-                        handleApplyDimChange(+(editingDim.displayVal + step).toFixed(editingDim.isAngle ? 1 : isMetric ? 3 : 4));
-                      }}
-                      title="Nudge Up (Arrow Up)"
-                      style={{
-                        background: 'rgba(0, 210, 255, 0.1)',
-                        border: '1px solid rgba(0, 210, 255, 0.3)',
-                        color: 'var(--cad-cyan)',
-                        borderRadius: '3px',
-                        padding: '1px 4px',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                      }}
-                    >
-                      <ChevronUp size={12} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const step = editingDim.isAngle ? 0.5 : isMetric ? 0.05 : 0.001;
-                        handleApplyDimChange(+(editingDim.displayVal - step).toFixed(editingDim.isAngle ? 1 : isMetric ? 3 : 4));
-                      }}
-                      title="Nudge Down (Arrow Down)"
-                      style={{
-                        background: 'rgba(0, 210, 255, 0.1)',
-                        border: '1px solid rgba(0, 210, 255, 0.3)',
-                        color: 'var(--cad-cyan)',
-                        borderRadius: '3px',
-                        padding: '1px 4px',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                      }}
-                    >
-                      <ChevronDown size={12} />
-                    </button>
-                  </div>
-
-                  <input
-                    id="input-edit-measurement"
-                    type="number"
-                    autoFocus
-                    step={editingDim.isAngle ? 0.5 : isMetric ? 0.05 : 0.001}
-                    value={editingDim.draftValue !== undefined ? editingDim.draftValue : editingDim.displayVal}
-                    onChange={(e) => {
-                      const raw = e.target.value;
-                      setEditingDim((prev) => (prev ? { ...prev, draftValue: raw } : null));
-                      const parsed = parseFloat(raw);
-                      if (Number.isFinite(parsed)) {
-                        handleApplyDimChange(parsed);
-                      }
-                    }}
-                    onBlur={() => setEditingDim((prev) => (prev ? { ...prev, draftValue: undefined } : null))}
-                    onWheel={handleInputWheel}
-                    onKeyDown={handleInputKeyDown}
-                    title="Direct number input. Use mouse wheel or Up/Down arrows to nudge (Shift = x10 coarse, Alt = fine)"
-                    style={{
-                      flex: 1,
-                      minWidth: 0,
-                      background: '#070a10',
-                      border: '1.5px solid var(--cad-cyan)',
-                      borderRadius: '4px',
-                      color: '#00f0ff',
-                      fontFamily: 'var(--font-mono)',
-                      fontSize: '15px',
-                      fontWeight: 700,
-                      padding: '5px 8px',
-                      textAlign: 'right',
-                      outline: 'none',
-                      boxShadow: 'inset 0 2px 6px rgba(0, 0, 0, 0.8)'
-                    }}
-                  />
-                  <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', width: '24px', flexShrink: 0, fontWeight: 600 }}>
-                    {editingDim.isAngle ? 'deg' : isMetric ? 'mm' : 'in'}
-                  </span>
-
-                  {/* Quick Step Undo Button */}
-                  <button
-                    id="btn-undo-measurement-step"
-                    type="button"
-                    onClick={handleUndoDimStep}
-                    disabled={editingDim.history.length <= 1}
-                    title="Undo last change to this measurement (⌘Z / Ctrl+Z)"
-                    style={{
-                      flexShrink: 0,
-                      whiteSpace: 'nowrap',
-                      background: editingDim.history.length > 1 ? 'rgba(0, 210, 255, 0.15)' : 'var(--bg-tertiary)',
-                      border: `1px solid ${editingDim.history.length > 1 ? 'var(--cad-cyan)' : 'var(--border-color)'}`,
-                      color: editingDim.history.length > 1 ? 'var(--cad-cyan)' : 'var(--text-muted)',
-                      borderRadius: '4px',
-                      padding: '5px 8px',
-                      cursor: editingDim.history.length > 1 ? 'pointer' : 'not-allowed',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      fontSize: '11px',
-                      fontWeight: 600,
-                      opacity: editingDim.history.length > 1 ? 1 : 0.35,
-                      transition: 'all 0.15s'
-                    }}
-                  >
-                    <Undo2 size={12} />
-                    <span>Undo</span>
-                  </button>
-                </div>
-
-                {/* Continuous Range Scrubber Slider */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0 2px' }}>
-                  <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', minWidth: '38px', flexShrink: 0 }}>
-                    {tolInfo.sliderMin}
-                  </span>
-                  <input
-                    id="slider-edit-measurement"
-                    type="range"
-                    min={tolInfo.sliderMin}
-                    max={tolInfo.sliderMax}
-                    step={tolInfo.sliderStep}
-                    value={editingDim.displayVal}
-                    onChange={(e) => handleApplyDimChange(parseFloat(e.target.value) || 0)}
-                    title="Continuous smooth drag scrubber (drag to dynamically adjust dimension in real time)"
-                    style={{
-                      flex: 1,
-                      accentColor: 'var(--cad-cyan)',
-                      cursor: 'ew-resize',
-                      height: '5px'
-                    }}
-                  />
-                  <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', minWidth: '38px', textAlign: 'right', flexShrink: 0 }}>
-                    {tolInfo.sliderMax}
-                  </span>
-                </div>
-              </div>
-
-              {/* Precision Multi-Tier Steppers */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                <div style={{ fontSize: '8.5px', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.4px' }}>
-                  PRECISION MACHINING STEPPERS:
-                </div>
-                
-                {/* Fine Stepper Tier */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: '2px' }}>
-                  {editingDim.isAngle ? (
-                    <>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal - 1.0).toFixed(1))} style={stepperStyle}>-1.0°</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal - 0.5).toFixed(1))} style={stepperStyle}>-0.5°</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal - 0.2).toFixed(1))} style={stepperStyle}>-0.2°</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal - 0.1).toFixed(1))} style={stepperStyle}>-0.1°</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal + 0.1).toFixed(1))} style={stepperStyle}>+0.1°</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal + 0.2).toFixed(1))} style={stepperStyle}>+0.2°</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal + 0.5).toFixed(1))} style={stepperStyle}>+0.5°</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal + 1.0).toFixed(1))} style={stepperStyle}>+1.0°</button>
-                    </>
-                  ) : isMetric ? (
-                    <>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal - 0.10).toFixed(2))} style={stepperStyle}>-.10</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal - 0.05).toFixed(2))} style={stepperStyle}>-.05</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal - 0.02).toFixed(2))} style={stepperStyle}>-.02</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal - 0.01).toFixed(2))} style={stepperStyle}>-.01</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal + 0.01).toFixed(2))} style={stepperStyle}>+.01</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal + 0.02).toFixed(2))} style={stepperStyle}>+.02</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal + 0.05).toFixed(2))} style={stepperStyle}>+.05</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal + 0.10).toFixed(2))} style={stepperStyle}>+.10</button>
-                    </>
-                  ) : (
-                    <>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal - 0.005).toFixed(4))} style={stepperStyle}>-.005</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal - 0.002).toFixed(4))} style={stepperStyle}>-.002</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal - 0.001).toFixed(4))} style={stepperStyle}>-.001</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal - 0.0005).toFixed(4))} style={stepperStyle}>-.0005</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal + 0.0005).toFixed(4))} style={stepperStyle}>+.0005</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal + 0.001).toFixed(4))} style={stepperStyle}>+.001</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal + 0.002).toFixed(4))} style={stepperStyle}>+.002</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal + 0.005).toFixed(4))} style={stepperStyle}>+.005</button>
-                    </>
-                  )}
-                </div>
-
-                {/* Coarse Stepper Tier */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '2px' }}>
-                  {editingDim.isAngle ? (
-                    <>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal - 10.0).toFixed(1))} style={stepperStyle}>-10°</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal - 5.0).toFixed(1))} style={stepperStyle}>-5.0°</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal - 2.0).toFixed(1))} style={stepperStyle}>-2.0°</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal + 2.0).toFixed(1))} style={stepperStyle}>+2.0°</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal + 5.0).toFixed(1))} style={stepperStyle}>+5.0°</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal + 10.0).toFixed(1))} style={stepperStyle}>+10°</button>
-                    </>
-                  ) : isMetric ? (
-                    <>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal - 1.00).toFixed(2))} style={stepperStyle}>-1.00</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal - 0.50).toFixed(2))} style={stepperStyle}>-0.50</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal - 0.20).toFixed(2))} style={stepperStyle}>-0.20</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal + 0.20).toFixed(2))} style={stepperStyle}>+0.20</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal + 0.50).toFixed(2))} style={stepperStyle}>+0.50</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal + 1.00).toFixed(2))} style={stepperStyle}>+1.00</button>
-                    </>
-                  ) : (
-                    <>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal - 0.050).toFixed(4))} style={stepperStyle}>-.050</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal - 0.025).toFixed(4))} style={stepperStyle}>-.025</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal - 0.010).toFixed(4))} style={stepperStyle}>-.010</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal + 0.010).toFixed(4))} style={stepperStyle}>+.010</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal + 0.025).toFixed(4))} style={stepperStyle}>+.025</button>
-                      <button onClick={() => handleApplyDimChange(+(editingDim.displayVal + 0.050).toFixed(4))} style={stepperStyle}>+.050</button>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {/* Live Engineering Telemetry (Volumetric & Chamber Fit) */}
-              <div style={{
-                background: 'rgba(0, 210, 255, 0.04)',
-                border: '1px solid rgba(0, 210, 255, 0.18)',
-                borderRadius: '5px',
-                padding: '6px 8px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '5px'
-              }}>
-                {/* Powder Chamber Capacity Telemetry */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                    <Droplet size={11} color="var(--cad-cyan)" />
-                    <span style={{ fontSize: '9.5px', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                      POWDER CAPACITY:
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '9.5px', fontFamily: 'var(--font-mono)' }}>
-                    <span style={{ color: '#fff', fontWeight: 700 }}>
-                      {currentVol.overflow_capacity_grains_h2o.toFixed(1)} gr H₂O
-                    </span>
-                    <span style={{
-                      color: Math.abs(deltaGrains) < 0.05 ? 'var(--text-muted)' : deltaGrains > 0 ? '#3fb950' : '#f85149',
-                      fontWeight: 700,
-                      fontSize: '9px',
-                      padding: '1px 4px',
-                      borderRadius: '3px',
-                      background: Math.abs(deltaGrains) < 0.05 ? 'transparent' : deltaGrains > 0 ? 'rgba(63, 185, 80, 0.15)' : 'rgba(248, 81, 73, 0.15)'
-                    }}>
-                      Δ {deltaGrains >= 0 ? '+' : ''}{deltaGrains.toFixed(2)} gr ({deltaPercent >= 0 ? '+' : ''}{deltaPercent.toFixed(1)}%)
-                    </span>
-                  </div>
-                </div>
-
-                {/* Chamber Reamer Clearance Telemetry */}
-                {chamberClearanceInches !== null && (
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    paddingTop: '4px',
-                    borderTop: '1px solid rgba(255, 255, 255, 0.06)'
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                      {chamberClearanceInches < 0 ? (
-                        <AlertTriangle size={11} color="#f85149" />
-                      ) : (
-                        <CheckCircle2 size={11} color={chamberClearanceInches < 0.0015 ? '#d29922' : '#3fb950'} />
-                      )}
-                      <span style={{ fontSize: '9.5px', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                        {clearanceFeatureLabel ? clearanceFeatureLabel.toUpperCase() : 'CHAMBER FIT'}:
-                      </span>
-                      {reamerChamberVal !== null && (
-                        <span style={{ fontSize: '8.5px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
-                          ({isMetric ? (reamerChamberVal * 25.4).toFixed(2) + 'mm' : reamerChamberVal.toFixed(4) + '"'})
-                        </span>
-                      )}
-                    </div>
-                    <span style={{
-                      fontSize: '9px',
-                      fontFamily: 'var(--font-mono)',
-                      fontWeight: 700,
-                      padding: '1px 4px',
-                      borderRadius: '3px',
-                      background: chamberClearanceInches < 0 
-                        ? 'rgba(248, 81, 73, 0.2)' 
-                        : chamberClearanceInches < 0.0015 
-                        ? 'rgba(210, 153, 34, 0.2)' 
-                        : 'rgba(63, 185, 80, 0.2)',
-                      color: chamberClearanceInches < 0 
-                        ? '#f85149' 
-                        : chamberClearanceInches < 0.0015 
-                        ? '#d29922' 
-                        : '#3fb950',
-                      border: `1px solid ${
-                        chamberClearanceInches < 0 
-                          ? 'rgba(248, 81, 73, 0.4)' 
-                          : chamberClearanceInches < 0.0015 
-                          ? 'rgba(210, 153, 34, 0.4)' 
-                          : 'rgba(63, 185, 80, 0.4)'
-                      }`
-                    }}>
-                      {chamberClearanceInches < 0 
-                        ? `INTERFERENCE (${chamberClearanceInches >= 0 ? '+' : ''}${isMetric ? (chamberClearanceInches * 25.4).toFixed(3) + 'mm' : chamberClearanceInches.toFixed(4) + '"'})` 
-                        : chamberClearanceInches < 0.0015 
-                        ? `TIGHT FIT (+${isMetric ? (chamberClearanceInches * 25.4).toFixed(3) + 'mm' : chamberClearanceInches.toFixed(4) + '"'})` 
-                        : `SAFE FIT (+${isMetric ? (chamberClearanceInches * 25.4).toFixed(3) + 'mm' : chamberClearanceInches.toFixed(4) + '"'})`}
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {/* Wildcat Geometric Coupling Controls */}
-              {editingDim.key === 'body_length' && (
-                <div style={{
-                  background: 'rgba(255, 255, 255, 0.03)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  borderRadius: '5px',
-                  padding: '5px 7px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '4px'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: '9px', fontWeight: 700, color: 'var(--cad-cyan)' }}>
-                      WILDCAT COUPLING:
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setLockCaseLengthOnBodyChange((prev) => !prev)}
-                      style={{
-                        background: lockCaseLengthOnBodyChange ? 'rgba(0, 210, 255, 0.15)' : 'rgba(240, 136, 62, 0.15)',
-                        border: `1px solid ${lockCaseLengthOnBodyChange ? 'var(--cad-cyan)' : 'var(--cad-copper)'}`,
-                        color: lockCaseLengthOnBodyChange ? 'var(--cad-cyan)' : 'var(--cad-copper)',
-                        borderRadius: '3px',
-                        padding: '2px 5px',
-                        fontSize: '9px',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px'
-                      }}
-                    >
-                      {lockCaseLengthOnBodyChange ? <Lock size={10} /> : <Unlock size={10} />}
-                      <span>{lockCaseLengthOnBodyChange ? 'Lock Case Length (L₃)' : 'Extend L₃ with Body'}</span>
-                    </button>
-                  </div>
-                  <div style={{ fontSize: '8.5px', color: 'var(--text-muted)' }}>
-                    Resulting Neck Length: <strong style={{ color: '#fff' }}>{(cartridge.case_length - cartridge.body_length - cartridge.shoulder_length).toFixed(3)}"</strong>
-                    {lockCaseLengthOnBodyChange ? ' (shortens as shoulder moves forward)' : ' (neck length stays fixed)'}
-                  </div>
-                </div>
-              )}
-
-              {editingDim.key === 'bullet_diameter' && (() => {
-                const currentDia = isMetric ? editingDim.displayVal / 25.4 : editingDim.displayVal;
-                const filteredCalibers = selectedCaliberCategoryFilter === 'All'
-                  ? CALIBER_PRESETS
-                  : CALIBER_PRESETS.filter(c => c.category === selectedCaliberCategoryFilter);
-                
-                const q = bulletSearchQuery.trim().toLowerCase();
-                const matchingBullets = q
-                  ? BULLET_OPTIONS.filter(b => 
-                      b.name.toLowerCase().includes(q) ||
-                      b.manufacturer.toLowerCase().includes(q) ||
-                      b.category.toLowerCase().includes(q) ||
-                      b.caliber_designation.toLowerCase().includes(q) ||
-                      `${b.weight_grains}gr`.includes(q) ||
-                      `${b.weight_grains}` === q
-                    )
-                  : getBulletsForCaliber(currentDia, 0.008);
-
-                return (
-                  <div style={{
-                    background: 'rgba(255, 255, 255, 0.03)',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    borderRadius: '6px',
-                    padding: '6px 8px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '6px'
-                  }}>
-                    {/* Header & Controls */}
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{ fontSize: '9.5px', fontWeight: 700, color: 'var(--cad-copper)', letterSpacing: '0.4px' }}>
-                        STANDARD CALIBER PRESETS ({CALIBER_PRESETS.length})
-                      </span>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '8.5px', color: 'var(--text-secondary)', cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={preserveNeckWallOnBulletChange}
-                          onChange={(e) => setPreserveNeckWallOnBulletChange(e.target.checked)}
-                          style={{ accentColor: 'var(--cad-copper)' }}
-                        />
-                        <span>Sync Neck (H₂)</span>
-                      </label>
-                    </div>
-
-                    {/* Category Tabs */}
-                    <div style={{ display: 'flex', gap: '3px', overflowX: 'auto', paddingBottom: '2px' }}>
-                      {[
-                        { label: 'All', cat: 'All' },
-                        { label: 'Varmint', cat: 'Sub-Caliber & Varmint' },
-                        { label: 'Match/Rifle', cat: 'Match & Service Rifle (6mm - .30 Cal)' },
-                        { label: 'Medium/Euro', cat: 'Medium Bore & European (8mm - 9.3mm)' },
-                        { label: 'African / DG', cat: 'African Express & Dangerous Game' },
-                        { label: 'Handgun', cat: 'Handgun, Pistol & PDW' },
-                        { label: 'ELR', cat: 'Anti-Materiel & Extreme Long Range (ELR)' }
-                      ].map(item => {
-                        const isCatActive = selectedCaliberCategoryFilter === item.cat;
-                        return (
-                          <button
-                            key={item.label}
-                            type="button"
-                            onClick={() => setSelectedCaliberCategoryFilter(item.cat)}
-                            style={{
-                              background: isCatActive ? 'rgba(240, 136, 62, 0.3)' : 'rgba(255, 255, 255, 0.04)',
-                              border: `1px solid ${isCatActive ? 'var(--cad-copper)' : 'rgba(255, 255, 255, 0.08)'}`,
-                              color: isCatActive ? '#fff' : 'var(--text-secondary)',
-                              borderRadius: '3px',
-                              padding: '2px 5px',
-                              fontSize: '8px',
-                              fontWeight: isCatActive ? 700 : 500,
-                              whiteSpace: 'nowrap',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            {item.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {/* Caliber Buttons Grid */}
-                    <div style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(5, 1fr)',
-                      gap: '3px',
-                      maxHeight: '90px',
-                      overflowY: 'auto',
-                      paddingRight: '2px'
-                    }}>
-                      {filteredCalibers.map((cal) => {
-                        const display = isMetric ? +(cal.inches * 25.4).toFixed(2) : cal.inches;
-                        const isActive = Math.abs(editingDim.displayVal - display) < 0.003;
-                        return (
-                          <button
-                            key={`${cal.category}-${cal.designation}-${cal.inches}`}
-                            type="button"
-                            title={`${cal.designation} (${cal.commonCartridges})`}
-                            onClick={() => handleApplyDimChange(display)}
-                            style={{
-                              background: isActive ? 'rgba(240, 136, 62, 0.35)' : 'rgba(255, 255, 255, 0.04)',
-                              border: `1px solid ${isActive ? 'var(--cad-copper)' : 'rgba(255, 255, 255, 0.1)'}`,
-                              color: isActive ? '#fff' : 'var(--text-secondary)',
-                              borderRadius: '3px',
-                              padding: '3px 1px',
-                              fontSize: '8px',
-                              fontWeight: isActive ? 700 : 500,
-                              cursor: 'pointer',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              alignItems: 'center',
-                              lineHeight: 1.1
-                            }}
-                          >
-                            <span>{cal.inches.toFixed(3)}"</span>
-                            <span style={{ fontSize: '7px', opacity: 0.75 }}>{cal.mm}mm</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {/* FACTORY BULLET OPTIONS LIBRARY DRAWER */}
-                    <div style={{
-                      marginTop: '4px',
-                      paddingTop: '6px',
-                      borderTop: '1px solid rgba(240, 136, 62, 0.25)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '4px'
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <span style={{ fontSize: '9px', fontWeight: 700, color: 'var(--cad-cyan)' }}>
-                            BULLET OPTIONS & MATCH PROJECTILES:
-                          </span>
-                          <span style={{ fontSize: '8px', color: 'var(--text-muted)' }}>
-                            ({matchingBullets.length} available)
-                          </span>
-                        </div>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '8px', color: 'var(--text-secondary)', cursor: 'pointer' }}>
-                          <input
-                            type="checkbox"
-                            checked={applyBulletSeatingDepth}
-                            onChange={(e) => setApplyBulletSeatingDepth(e.target.checked)}
-                            style={{ accentColor: 'var(--cad-cyan)' }}
-                          />
-                          <span>Set Seating Depth</span>
-                        </label>
-                      </div>
-
-                      {/* Bullet Quick Search */}
-                      <input
-                        type="text"
-                        placeholder="Search all bullets (e.g. SMK, ELD-M, 175gr, Barnes, Lapua)..."
-                        value={bulletSearchQuery}
-                        onChange={(e) => setBulletSearchQuery(e.target.value)}
-                        style={{
-                          background: 'rgba(0, 0, 0, 0.4)',
-                          border: '1px solid rgba(255, 255, 255, 0.15)',
-                          borderRadius: '3px',
-                          color: '#fff',
-                          fontSize: '8.5px',
-                          padding: '3px 6px',
-                          outline: 'none',
-                          width: '100%',
-                          boxSizing: 'border-box'
-                        }}
-                      />
-
-                      {/* Active Loaded Bullet Banner */}
-                      {(() => {
-                        const activeBullet =
-                          (appliedBulletNotification && BULLET_OPTIONS.find(b => b.id === appliedBulletNotification.id)) ||
-                          getActiveBulletPreset(cartridge);
-                        if (!activeBullet) return null;
-
-                        return (
-                          <div style={{
-                            background: 'rgba(0, 210, 255, 0.12)',
-                            border: '1px solid rgba(0, 210, 255, 0.45)',
-                            borderRadius: '4px',
-                            padding: '4px 6px',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '2px',
-                            boxShadow: '0 0 10px rgba(0, 210, 255, 0.12)'
-                          }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                              <span style={{ fontSize: '8.5px', fontWeight: 700, color: 'var(--cad-cyan)', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                                <Check size={10} /> LOADED: {activeBullet.name}
-                              </span>
-                              <span style={{ fontSize: '7.5px', color: '#fbbf24', fontWeight: 700 }}>
-                                COAL: {cartridge.coal.toFixed(3)}"
-                              </span>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '7.5px', color: 'var(--text-secondary)' }}>
-                              <span>{activeBullet.weight_grains}gr (L: {activeBullet.length_inches}")</span>
-                              <span>Seat: {cartridge.seating_depth}"</span>
-                              <span>BC G1: {activeBullet.g1_bc}</span>
-                            </div>
-                          </div>
-                        );
-                      })()}
-
-                      {/* Bullet Cards List */}
-                      <div style={{
-                        maxHeight: '140px',
-                        overflowY: 'auto',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '3px',
-                        paddingRight: '2px'
-                      }}>
-                        {matchingBullets.length === 0 ? (
-                          <div style={{ fontSize: '8.5px', color: 'var(--text-muted)', textAlign: 'center', padding: '6px' }}>
-                            No factory bullet models found for {currentDia.toFixed(3)}". Search above to view all bullets.
-                          </div>
-                        ) : (
-                          matchingBullets.map((bullet) => {
-                            const isCurrentBullet = 
-                              Math.abs(cartridge.bullet_diameter - bullet.caliber_inches) < 0.003 &&
-                              cartridge.bullet_weight_grains === bullet.weight_grains;
-
-                            return (
-                              <div
-                                key={bullet.id}
-                                onClick={() => handleApplyBulletPreset(bullet)}
-                                style={{
-                                  background: isCurrentBullet ? 'rgba(0, 210, 255, 0.18)' : 'rgba(255, 255, 255, 0.03)',
-                                  border: `1px solid ${isCurrentBullet ? 'var(--cad-cyan)' : 'rgba(255, 255, 255, 0.08)'}`,
-                                  borderRadius: '4px',
-                                  padding: '4px 6px',
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  flexDirection: 'column',
-                                  gap: '2px',
-                                  transition: 'background 0.1s, border-color 0.1s'
-                                }}
-                              >
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                  <span style={{ fontSize: '9px', fontWeight: 700, color: isCurrentBullet ? '#fff' : 'var(--text-primary)' }}>
-                                    {bullet.name}
-                                  </span>
-                                  <span style={{
-                                    fontSize: '7.5px',
-                                    padding: '1px 4px',
-                                    borderRadius: '3px',
-                                    background: bullet.category.includes('Match') || bullet.category.includes('ELD')
-                                      ? 'rgba(0, 210, 255, 0.2)'
-                                      : bullet.category.includes('Copper')
-                                      ? 'rgba(240, 136, 62, 0.2)'
-                                      : 'rgba(255, 255, 255, 0.08)',
-                                    color: bullet.category.includes('Match') || bullet.category.includes('ELD')
-                                      ? 'var(--cad-cyan)'
-                                      : bullet.category.includes('Copper')
-                                      ? 'var(--cad-copper)'
-                                      : 'var(--text-secondary)'
-                                  }}>
-                                    {bullet.category.split(' ')[0]}
-                                  </span>
-                                </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '8px', color: 'var(--text-secondary)' }}>
-                                  <span><strong style={{ color: '#fff' }}>{bullet.weight_grains}</strong> gr</span>
-                                  <span>L: <strong style={{ color: '#fff' }}>{bullet.length_inches.toFixed(3)}"</strong></span>
-                                  <span>G1 BC: <strong style={{ color: '#34d399' }}>{bullet.g1_bc.toFixed(3)}</strong></span>
-                                  <span>Seat: <strong>{bullet.recommended_seating_depth.toFixed(3)}"</strong></span>
-                                </div>
-                                {bullet.profile_notes && (
-                                  <div style={{ fontSize: '7.5px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                                    {bullet.profile_notes}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {editingDim.key === 'shoulder_angle' && (
-                <div style={{
-                  background: 'rgba(255, 255, 255, 0.03)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  borderRadius: '5px',
-                  padding: '5px 7px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '4px'
-                }}>
-                  <div style={{ fontSize: '9px', fontWeight: 700, color: 'var(--cad-brass)' }}>
-                    STANDARD SHOULDER ANGLES:
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '3px' }}>
-                    {[
-                      { label: '17.5°', val: 17.5 },
-                      { label: '20°', val: 20.0 },
-                      { label: '25°', val: 25.0 },
-                      { label: '30°', val: 30.0 },
-                      { label: '35°', val: 35.0 },
-                      { label: '40°', val: 40.0 },
-                    ].map((ang) => {
-                      const isActive = Math.abs(editingDim.displayVal - ang.val) < 0.1;
-                      return (
-                        <button
-                          key={ang.label}
-                          type="button"
-                          onClick={() => handleApplyDimChange(ang.val)}
-                          style={{
-                            background: isActive ? 'rgba(218, 165, 32, 0.3)' : 'rgba(255, 255, 255, 0.04)',
-                            border: `1px solid ${isActive ? 'var(--cad-brass)' : 'rgba(255, 255, 255, 0.1)'}`,
-                            color: isActive ? '#fff' : 'var(--text-secondary)',
-                            borderRadius: '3px',
-                            padding: '3px 1px',
-                            fontSize: '9px',
-                            fontWeight: 600,
-                            cursor: 'pointer'
-                          }}
-                        >
-                          {ang.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Quick Shoulder Removal / Straight-Wall Actions inside Popover */}
-              {(editingDim.key === 'shoulder_angle' || editingDim.key === 'shoulder_start_diameter' || editingDim.key === 'shoulder_length') && (
-                <div style={{
-                  background: 'rgba(0, 210, 255, 0.05)',
-                  border: '1px solid rgba(0, 210, 255, 0.18)',
-                  borderRadius: '4px',
-                  padding: '5px 7px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '4px'
-                }}>
-                  <div style={{ fontSize: '9px', fontWeight: 700, color: 'var(--cad-cyan)', letterSpacing: '0.4px' }}>
-                    SHOULDER CONVERSION OPTIONS:
-                  </div>
-                  {!isStraightWall(cartridge) ? (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
-                      <button
-                        id="btn-popover-remove-shoulder-taper"
-                        onClick={() => {
-                          if (onUpdateCartridge) {
-                            onUpdateCartridge({
-                              ...cartridge,
-                              body_length: cartridge.case_length,
-                              shoulder_length: 0.0,
-                              shoulder_angle: 0.0,
-                              shoulder_start_diameter: cartridge.neck_diameter_mouth,
-                              neck_diameter_base: cartridge.neck_diameter_mouth,
-                            });
-                          }
-                          closePopover();
-                        }}
-                        style={{
-                          background: 'var(--bg-card)',
-                          border: '1px solid var(--cad-cyan)',
-                          color: 'var(--cad-cyan)',
-                          borderRadius: '4px',
-                          padding: '3px',
-                          fontSize: '9px',
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '4px'
-                        }}
-                      >
-                        <ShieldOff size={11} />
-                        <span>Taper to Mouth</span>
-                      </button>
-
-                      <button
-                        id="btn-popover-remove-shoulder-cylinder"
-                        onClick={() => {
-                          if (onUpdateCartridge) {
-                            const baseDia = cartridge.base_diameter;
-                            const bulletDia = Math.max(0.170, Math.round((baseDia - 2 * cartridge.neck_wall_thickness) * 1000) / 1000);
-                            onUpdateCartridge({
-                              ...cartridge,
-                              body_length: cartridge.case_length,
-                              shoulder_length: 0.0,
-                              shoulder_angle: 0.0,
-                              shoulder_start_diameter: baseDia,
-                              neck_diameter_base: baseDia,
-                              neck_diameter_mouth: baseDia,
-                              bullet_diameter: bulletDia,
-                            });
-                          }
-                          closePopover();
-                        }}
-                        style={{
-                          background: 'var(--bg-card)',
-                          border: '1px solid var(--cad-cyan)',
-                          color: 'var(--cad-cyan)',
-                          borderRadius: '4px',
-                          padding: '3px',
-                          fontSize: '9px',
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '4px'
-                        }}
-                      >
-                        <ShieldOff size={11} />
-                        <span>Full Cylinder (P₁)</span>
-                      </button>
-                    </div>
-                  ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
-                      <button
-                        id="btn-popover-add-shoulder-20"
-                        onClick={() => {
-                          if (onUpdateCartridge) {
-                            const l3 = cartridge.case_length;
-                            const p1 = cartridge.base_diameter;
-                            const h2 = cartridge.neck_diameter_mouth;
-                            onUpdateCartridge({
-                              ...cartridge,
-                              body_length: Math.max(0.600, l3 - 0.380),
-                              shoulder_length: 0.140,
-                              shoulder_angle: 20.0,
-                              shoulder_start_diameter: Math.max(p1 * 0.965, h2 + 0.020),
-                              neck_diameter_base: h2,
-                            });
-                          }
-                          closePopover();
-                        }}
-                        style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff', borderRadius: '4px', padding: '3px', fontSize: '9px', fontWeight: 600, cursor: 'pointer' }}
-                      >
-                        +20° Standard
-                      </button>
-                      <button
-                        id="btn-popover-add-shoulder-30"
-                        onClick={() => {
-                          if (onUpdateCartridge) {
-                            const l3 = cartridge.case_length;
-                            const p1 = cartridge.base_diameter;
-                            const h2 = cartridge.neck_diameter_mouth;
-                            onUpdateCartridge({
-                              ...cartridge,
-                              body_length: Math.max(0.600, l3 - 0.350),
-                              shoulder_length: 0.100,
-                              shoulder_angle: 30.0,
-                              shoulder_start_diameter: Math.max(p1 * 0.980, h2 + 0.020),
-                              neck_diameter_base: h2,
-                            });
-                          }
-                          closePopover();
-                        }}
-                        style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff', borderRadius: '4px', padding: '3px', fontSize: '9px', fontWeight: 600, cursor: 'pointer' }}
-                      >
-                        +30° Match
-                      </button>
-                      <button
-                        id="btn-popover-add-shoulder-40"
-                        onClick={() => {
-                          if (onUpdateCartridge) {
-                            const l3 = cartridge.case_length;
-                            const p1 = cartridge.base_diameter;
-                            const h2 = cartridge.neck_diameter_mouth;
-                            onUpdateCartridge({
-                              ...cartridge,
-                              body_length: Math.max(0.600, l3 - 0.320),
-                              shoulder_length: 0.075,
-                              shoulder_angle: 40.0,
-                              shoulder_start_diameter: Math.max(p1 * 0.980, h2 + 0.020),
-                              neck_diameter_base: h2,
-                            });
-                          }
-                          closePopover();
-                        }}
-                        style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: '#fff', borderRadius: '4px', padding: '3px', fontSize: '9px', fontWeight: 600, cursor: 'pointer' }}
-                      >
-                        +40° Ackley
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Pinned Action & Undo Footer - Always inside frame */}
-            <div style={{
-              flexShrink: 0,
-              paddingTop: '8px',
-              marginTop: '6px',
-              borderTop: '1px solid rgba(255, 255, 255, 0.12)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '6px'
-            }}>
-              {/* Measurement Undo & Revert Row */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '6px'
-              }}>
-                <button
-                  id="btn-undo-to-initial"
-                  onClick={handleUndoToInitial}
-                  disabled={!isDifferentFromInitial}
-                  title={`Revert to initial dimension: ${initialDisplay}${editingDim.isAngle ? '°' : isMetric ? 'mm' : '"'}`}
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    background: isDifferentFromInitial ? 'rgba(0, 210, 255, 0.1)' : 'transparent',
-                    border: `1px solid ${isDifferentFromInitial ? 'rgba(0, 210, 255, 0.3)' : 'rgba(255, 255, 255, 0.08)'}`,
-                    color: isDifferentFromInitial ? 'var(--cad-cyan)' : 'var(--text-muted)',
-                    borderRadius: '4px',
-                    padding: '4px 6px',
-                    fontSize: '9.5px',
-                    fontWeight: 600,
-                    cursor: isDifferentFromInitial ? 'pointer' : 'default',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '4px',
-                    opacity: isDifferentFromInitial ? 1 : 0.35,
-                    transition: 'all 0.15s',
-                    overflow: 'hidden'
-                  }}
-                >
-                  <RotateCcw size={11} style={{ flexShrink: 0 }} />
-                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    Revert ({initialDisplay}{editingDim.isAngle ? '°' : isMetric ? 'mm' : '"'})
-                  </span>
-                </button>
-
-                {presetDisplay !== undefined && (
-                  <button
-                    id="btn-reset-to-preset"
-                    onClick={handleResetToPreset}
-                    disabled={!isDifferentFromPreset}
-                    title={`Reset to factory SAAMI/CIP spec: ${presetDisplay}${editingDim.isAngle ? '°' : isMetric ? 'mm' : '"'}`}
-                    style={{
-                      flex: 1,
-                      minWidth: 0,
-                      background: isDifferentFromPreset ? 'rgba(240, 136, 62, 0.1)' : 'transparent',
-                      border: `1px solid ${isDifferentFromPreset ? 'rgba(240, 136, 62, 0.3)' : 'rgba(255, 255, 255, 0.08)'}`,
-                      color: isDifferentFromPreset ? 'var(--cad-copper)' : 'var(--text-muted)',
-                      borderRadius: '4px',
-                      padding: '4px 6px',
-                      fontSize: '9.5px',
-                      fontWeight: 600,
-                      cursor: isDifferentFromPreset ? 'pointer' : 'default',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '4px',
-                      opacity: isDifferentFromPreset ? 1 : 0.35,
-                      transition: 'all 0.15s',
-                      overflow: 'hidden'
-                    }}
-                  >
-                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      Spec ({presetDisplay}{editingDim.isAngle ? '°' : isMetric ? 'mm' : '"'})
-                    </span>
-                  </button>
-                )}
-              </div>
-
-              {/* Action Buttons */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
-                <button
-                  id="btn-cancel-measurement"
-                  onClick={handleRevertAndClose}
-                  style={{
-                    background: 'transparent',
-                    border: '1px solid var(--border-color)',
-                    color: 'var(--text-secondary)',
-                    borderRadius: '4px',
-                    padding: '4px 12px',
-                    fontSize: '11px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  id="btn-done-measurement"
-                  onClick={handleCommitAndClose}
-                  style={{
-                    background: 'var(--cad-cyan)',
-                    border: 'none',
-                    color: '#0a0d13',
-                    borderRadius: '4px',
-                    padding: '4px 16px',
-                    fontSize: '11px',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px'
-                  }}
-                >
-                  <Check size={13} />
-                  Done
-                </button>
-              </div>
-            </div>
-          </div>,
-          document.body
-        );
-      })()}
+      {editingDim && (
+        <DimensionEditorPopover
+          editingDim={editingDim}
+          setEditingDim={setEditingDim}
+          cartridge={cartridge}
+          activeStandard={activeStandard}
+          isMetric={isMetric}
+          pan={pan}
+          currentVol={activeVol}
+          reamer={reamer}
+          onUpdateCartridge={onUpdateCartridge}
+          onClose={closePopover}
+        />
+      )}
 
       {/* SVG Canvas */}
       <svg
@@ -3663,35 +1477,6 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
             <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(38, 51, 74, 0.35)" strokeWidth="0.8" />
             <path d="M 20 0 L 20 40 M 0 20 L 40 20" fill="none" stroke="rgba(38, 51, 74, 0.15)" strokeWidth="0.5" strokeDasharray="2,2" />
           </pattern>
-
-          {/* Fallout Mini Nuke Olive Gradient */}
-          <linearGradient id="nukeOliveGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor="#4d5c34" stopOpacity="0.95" />
-            <stop offset="50%" stopColor="#3d4a29" stopOpacity="0.95" />
-            <stop offset="100%" stopColor="#28321a" stopOpacity="0.95" />
-          </linearGradient>
-
-          {/* Fallout Mini Nuke Red Dome Gradient */}
-          <linearGradient id="nukeRedDomeGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor="#ef4444" stopOpacity="1" />
-            <stop offset="45%" stopColor="#dc2626" stopOpacity="1" />
-            <stop offset="100%" stopColor="#991b1b" stopOpacity="1" />
-          </linearGradient>
-
-          {/* Fallout Mini Nuke Dark Steel Hardware */}
-          <linearGradient id="nukeSteelGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor="#475569" stopOpacity="1" />
-            <stop offset="50%" stopColor="#334155" stopOpacity="1" />
-            <stop offset="100%" stopColor="#1e293b" stopOpacity="1" />
-          </linearGradient>
-
-          {/* Glowing Radioactive Core Radial */}
-          <radialGradient id="nukeCoreRadial" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#86efac" stopOpacity="1" />
-            <stop offset="40%" stopColor="#22c55e" stopOpacity="0.95" />
-            <stop offset="85%" stopColor="#15803d" stopOpacity="0.85" />
-            <stop offset="100%" stopColor="#052e16" stopOpacity="0.7" />
-          </radialGradient>
 
           {/* Little Boy Gunmetal Military Gradient */}
           <linearGradient id="littleBoyGradient" x1="0%" y1="0%" x2="0%" y2="100%">
@@ -3749,230 +1534,25 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
           strokeDasharray="14,4,3,4"
         />
 
-        {/* ================= CLASSIFIED: LITTLE BOY RENDERING ================= */}
         {cartridge.id === 'little_boy_ordnance' ? (
-          <g id="little-boy-cad-model">
-            {/* Box Tail-Fin Assembly (4 Fins + Outer Box Shroud) */}
-            <g id="little-boy-box-fins">
-              {/* Upper & Lower Fin Extensions */}
-              <rect
-                x={originX}
-                y={centerY - rRim * 1.4}
-                width={1.8 * scale}
-                height={rRim * 0.5}
-                fill="#1f2937"
-                stroke="#475569"
-                strokeWidth="1.5"
-              />
-              <rect
-                x={originX}
-                y={centerY + rRim * 0.9}
-                width={1.8 * scale}
-                height={rRim * 0.5}
-                fill="#1f2937"
-                stroke="#475569"
-                strokeWidth="1.5"
-              />
-              {/* Iconic Square Box Shroud connecting the 4 tail fins */}
-              <rect
-                x={originX + 0.2 * scale}
-                y={centerY - rRim * 1.42}
-                width={1.2 * scale}
-                height={rRim * 2.84}
-                fill="none"
-                stroke="#64748b"
-                strokeWidth="3.5"
-                rx="2"
-              />
-              <line
-                x1={originX + 0.8 * scale}
-                y1={centerY - rRim * 1.42}
-                x2={originX + 0.8 * scale}
-                y2={centerY + rRim * 1.42}
-                stroke="#94a3b8"
-                strokeWidth="2"
-              />
-            </g>
-
-            {/* Long Cylindrical Bomb Body (Military Gunmetal Olive) */}
-            <rect
-              x={originX + 1.5 * scale}
-              y={centerY - rRim}
-              width={(cartridge.case_length - 1.5) * scale}
-              height={rRim * 2}
-              fill="url(#littleBoyGradient)"
-              stroke="#64748b"
-              strokeWidth="2"
-              rx="4"
-            />
-
-            {/* Blunt Hemispherical Nose Cap */}
-            <path
-              d={`
-                M ${pxMouth} ${centerY - rRim}
-                Q ${pxTip} ${centerY - rRim * 0.85}, ${pxTip} ${centerY}
-                Q ${pxTip} ${centerY + rRim * 0.85}, ${pxMouth} ${centerY + rRim}
-                Z
-              `}
-              fill="url(#littleBoyGradient)"
-              stroke="#94a3b8"
-              strokeWidth="2"
-            />
-
-            {/* 4 Radar Proximity Antenna Probes (Yagi Antenna needles extending forward) */}
-            <g id="little-boy-antenna-probes" stroke="#cbd5e1" strokeWidth="1.5">
-              <line x1={pxTip - 0.1 * scale} y1={centerY - rRim * 0.5} x2={pxTip + 0.5 * scale} y2={centerY - rRim * 0.75} />
-              <line x1={pxTip + 0.35 * scale} y1={centerY - rRim * 0.9} x2={pxTip + 0.35 * scale} y2={centerY - rRim * 0.6} />
-              <line x1={pxTip - 0.1 * scale} y1={centerY + rRim * 0.5} x2={pxTip + 0.5 * scale} y2={centerY + rRim * 0.75} />
-              <line x1={pxTip + 0.35 * scale} y1={centerY + rRim * 0.9} x2={pxTip + 0.35 * scale} y2={centerY + rRim * 0.6} />
-            </g>
-
-            {/* Hoist Lug on Top */}
-            <rect
-              x={originX + (cartridge.case_length / 2) * scale - 0.2 * scale}
-              y={centerY - rRim - 0.25 * scale}
-              width={0.4 * scale}
-              height={0.25 * scale}
-              fill="#475569"
-              stroke="#94a3b8"
-              strokeWidth="1.5"
-              rx="3"
-            />
-            <circle
-              cx={originX + (cartridge.case_length / 2) * scale}
-              cy={centerY - rRim - 0.12 * scale}
-              r={0.06 * scale}
-              fill="#0a0d13"
-            />
-
-            {/* Stenciled Nomenclature Markings */}
-            <text
-              x={originX + 2.5 * scale}
-              y={centerY - rRim * 0.35}
-              fill="#e2e8f0"
-              fontSize="12"
-              fontFamily="var(--font-mono)"
-              fontWeight="bold"
-              letterSpacing="1.5"
-            >
-              ORDNANCE BOMB MK-I (L-11)
-            </text>
-            <text
-              x={originX + 2.5 * scale}
-              y={centerY + rRim * 0.45}
-              fill="#94a3b8"
-              fontSize="9"
-              fontFamily="var(--font-mono)"
-            >
-              GUN-TYPE URANIUM-235 CRITICAL MASS
-            </text>
-
-            {/* Internal Gun-Type Assembly Cutaway */}
-            {activeDrawingMode === 'cutaway' && (
-              <g id="little-boy-gun-cutaway">
-                {/* 3-Inch Naval Gun Barrel Tube */}
-                <rect
-                  x={originX + 2.0 * scale}
-                  y={centerY - 0.35 * scale}
-                  width={(cartridge.case_length - 2.8) * scale}
-                  height={0.7 * scale}
-                  fill="#334155"
-                  stroke="#00d2ff"
-                  strokeWidth="1.5"
-                />
-
-                {/* Breech Cordite Powder Propellant */}
-                <rect
-                  x={originX + 2.0 * scale}
-                  y={centerY - 0.3 * scale}
-                  width={1.2 * scale}
-                  height={0.6 * scale}
-                  fill="url(#powderHatch)"
-                  stroke="#ea580c"
-                  strokeWidth="1"
-                />
-
-                {/* Hollow U-235 Projectile Bullet at Breech */}
-                <rect
-                  x={originX + 3.2 * scale}
-                  y={centerY - 0.28 * scale}
-                  width={0.9 * scale}
-                  height={0.56 * scale}
-                  fill="#10b981"
-                  stroke="#34d399"
-                  strokeWidth="1.5"
-                />
-
-                {/* Target U-235 Cylinder Rings at Muzzle */}
-                <rect
-                  x={originX + (cartridge.case_length - 1.8) * scale}
-                  y={centerY - 0.28 * scale}
-                  width={0.9 * scale}
-                  height={0.56 * scale}
-                  fill="#10b981"
-                  stroke="#34d399"
-                  strokeWidth="1.5"
-                />
-
-                {/* Internal Mechanism Labels */}
-                <text
-                  x={originX + 2.6 * scale}
-                  y={centerY + 0.6 * scale}
-                  fill="#f59e0b"
-                  fontSize="8.5"
-                  fontFamily="var(--font-mono)"
-                  fontWeight="bold"
-                >
-                  CORDITE CHARGE
-                </text>
-                <text
-                  x={originX + (cartridge.case_length - 2.2) * scale}
-                  y={centerY + 0.6 * scale}
-                  fill="#10b981"
-                  fontSize="8.5"
-                  fontFamily="var(--font-mono)"
-                  fontWeight="bold"
-                >
-                  U-235 TARGET
-                </text>
-              </g>
-            )}
-          </g>
+          <LittleBoySvg
+            originX={originX}
+            centerY={centerY}
+            rRim={rRim}
+            scale={scale}
+            pxMouth={pxMouth}
+            pxTip={pxTip}
+            caseLength={cartridge.case_length}
+            isCutaway={activeDrawingMode === 'cutaway'}
+          />
         ) : (
-          /* ================= STANDARD CARTRIDGE RENDERING (5 MODES) ================= */
           <>
-            {/* ================= CHAMBER OVERLAY & CHAMBER FIT LAYER ================= */}
             {needsChamber && (
               <g id="chamber-fit-layer">
-                {/* When in chamber_fit mode, render surrounding receiver/barrel steel hatching */}
                 {activeDrawingMode === 'chamber_fit' && (
                   <>
-                    <path
-                      d={`
-                        M ${originX - 20} ${centerY - (reamer.chamber_rim_dia / 2 + 0.4) * scale}
-                        L ${zChamberEnd + 40} ${centerY - (reamer.chamber_rim_dia / 2 + 0.4) * scale}
-                        L ${zChamberEnd + 40} ${centerY - (reamer.pilot_diameter / 2) * scale}
-                        L ${zChamberEnd} ${centerY - (reamer.pilot_diameter / 2) * scale}
-                        ${chamberTopPath.split('L').slice(1).reverse().map(pt => 'L' + pt).join(' ')}
-                        L ${originX - 20} ${centerY - (reamer.chamber_rim_dia / 2) * scale}
-                        Z
-                      `}
-                      fill="url(#chamberHatch)"
-                      opacity="0.85"
-                    />
-                    <path
-                      d={`
-                        M ${originX - 20} ${centerY + (reamer.chamber_rim_dia / 2 + 0.4) * scale}
-                        L ${zChamberEnd + 40} ${centerY + (reamer.chamber_rim_dia / 2 + 0.4) * scale}
-                        L ${zChamberEnd + 40} ${centerY + (reamer.pilot_diameter / 2) * scale}
-                        L ${zChamberEnd} ${centerY + (reamer.pilot_diameter / 2) * scale}
-                        ${chamberBottomPath.split('L').slice(1).reverse().map(pt => 'L' + pt).join(' ')}
-                        L ${originX - 20} ${centerY + (reamer.chamber_rim_dia / 2) * scale}
-                        Z
-                      `}
-                      fill="url(#chamberHatch)"
-                      opacity="0.85"
-                    />
+                    <path d={chamberTopHatchPath} fill="url(#chamberHatch)" opacity="0.85" />
+                    <path d={chamberBottomHatchPath} fill="url(#chamberHatch)" opacity="0.85" />
                   </>
                 )}
 
@@ -4024,7 +1604,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
               </g>
             )}
 
-            {/* ================= BULLET DRAWING (INTERACTIVE) ================= */}
+            {/* Interactive Bullet Drawing */}
             {activeShowBullet && (
               <g
                 id="interactive-cad-bullet"
@@ -4143,14 +1723,11 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
               </g>
             )}
 
-            {/* ================= CARTRIDGE CASE DRAWING ================= */}
-            {/* 1. CUTAWAY MODE: Full Longitudinal Cross-Section */}
+            {/* 1. Cutaway Mode: Full Longitudinal Cross-Section */}
             {activeDrawingMode === 'cutaway' && (
               <>
-                {/* Powder Column Cavity */}
                 <path d={innerClosedPath} fill="url(#powderHatch)" />
 
-                {/* Solid Head / Web Section */}
                 <rect
                   x={originX}
                   y={centerY - rRim}
@@ -4160,8 +1737,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
                   opacity="0.3"
                 />
 
-                {/* Primer Pocket */}
-                {cartridge.primer_pocket_dia > 0 && (
+                {hasCenterfirePrimer && cartridge.primer_pocket_dia > 0 && cartridge.primer_pocket_depth > 0 && (
                   <rect
                     x={originX}
                     y={centerY - (cartridge.primer_pocket_dia / 2) * scale}
@@ -4173,8 +1749,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
                   />
                 )}
 
-                {/* Flash Hole */}
-                {cartridge.flash_hole_dia > 0 && (
+                {hasCenterfirePrimer && cartridge.flash_hole_dia > 0 && (
                   <rect
                     x={originX + cartridge.primer_pocket_depth * scale}
                     y={centerY - (cartridge.flash_hole_dia / 2) * scale}
@@ -4186,7 +1761,6 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
                   />
                 )}
 
-                {/* Outer Casing Outline */}
                 <path
                   d={outerCutawayClosedPath}
                   fill="none"
@@ -4194,28 +1768,16 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
                   strokeWidth="1.8"
                 />
 
-                {/* Inner Walls in Cutaway Mode */}
                 <path d={innerTopPath} fill="none" stroke="#e5be59" strokeWidth="1.4" strokeDasharray="5,2" />
                 <path d={innerBottomPath} fill="none" stroke="#e5be59" strokeWidth="1.4" strokeDasharray="5,2" />
               </>
             )}
 
-            {/* 2. HALF-SECTION MODE: Top Half Cutaway / Bottom Half Solid Exterior */}
+            {/* 2. Half-Section Mode: Top Half Cutaway / Bottom Half Solid Exterior */}
             {activeDrawingMode === 'half_section' && (
               <>
-                {/* Top Half: Powder Column Hatch */}
-                <path
-                  d={`
-                    M ${originX + cartridge.web_thickness * scale} ${centerY}
-                    L ${originX + cartridge.web_thickness * scale} ${centerY - getInnerRadiusAt(cartridge, cartridge.web_thickness) * scale}
-                    ${innerTopPath.substring(innerTopPath.indexOf('L'))}
-                    L ${pxMouth} ${centerY}
-                    Z
-                  `}
-                  fill="url(#powderHatch)"
-                />
+                <path d={innerHalfSectionPath} fill="url(#powderHatch)" />
 
-                {/* Top Half: Solid Web Head */}
                 <rect
                   x={originX}
                   y={centerY - rRim}
@@ -4225,8 +1787,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
                   opacity="0.35"
                 />
 
-                {/* Top Half: Primer Pocket */}
-                {cartridge.primer_pocket_dia > 0 && (
+                {hasCenterfirePrimer && cartridge.primer_pocket_dia > 0 && cartridge.primer_pocket_depth > 0 && (
                   <rect
                     x={originX}
                     y={centerY - (cartridge.primer_pocket_dia / 2) * scale}
@@ -4238,8 +1799,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
                   />
                 )}
 
-                {/* Top Half: Flash Hole */}
-                {cartridge.flash_hole_dia > 0 && (
+                {hasCenterfirePrimer && cartridge.flash_hole_dia > 0 && (
                   <rect
                     x={originX + cartridge.primer_pocket_depth * scale}
                     y={centerY - (cartridge.flash_hole_dia / 2) * scale}
@@ -4251,17 +1811,14 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
                   />
                 )}
 
-                {/* Top Half: Inner Wall */}
                 <path d={innerTopPath} fill="none" stroke="#e5be59" strokeWidth="1.4" strokeDasharray="5,2" />
 
-                {/* Bottom Half: Solid Exterior Fill */}
                 <path
                   d={`${outerBottomPath} L ${pxMouth} ${centerY} Z`}
                   fill="rgba(0, 210, 255, 0.05)"
                   stroke="none"
                 />
 
-                {/* Full Outer Profile Outline */}
                 <path
                   d={outerClosedPath}
                   fill="none"
@@ -4271,10 +1828,9 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
               </>
             )}
 
-            {/* 3. WIREFRAME MODE: Pure CAD Lines with Hidden Contours */}
+            {/* 3. Wireframe Mode: CAD Lines with Hidden Contours */}
             {activeDrawingMode === 'wireframe' && (
               <>
-                {/* Outer Profile Wireframe (No Fill) */}
                 <path
                   d={outerClosedPath}
                   fill="none"
@@ -4282,24 +1838,21 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
                   strokeWidth="1.6"
                 />
 
-                {/* Inner Cavity Dashed Hidden Lines */}
                 <path d={innerTopPath} fill="none" stroke="#38bdf8" strokeWidth="1.2" strokeDasharray="4,3" opacity="0.85" />
                 <path d={innerBottomPath} fill="none" stroke="#38bdf8" strokeWidth="1.2" strokeDasharray="4,3" opacity="0.85" />
 
-                {/* Web Thickness Boundary Line */}
                 <line
                   x1={originX + cartridge.web_thickness * scale}
-                  y1={centerY - getInnerRadiusAt(cartridge, cartridge.web_thickness) * scale}
+                  y1={centerY - rWeb}
                   x2={originX + cartridge.web_thickness * scale}
-                  y2={centerY + getInnerRadiusAt(cartridge, cartridge.web_thickness) * scale}
+                  y2={centerY + rWeb}
                   stroke="#38bdf8"
                   strokeWidth="1.2"
                   strokeDasharray="4,3"
                   opacity="0.85"
                 />
 
-                {/* Primer Pocket Wireframe */}
-                {cartridge.primer_pocket_dia > 0 && (
+                {hasCenterfirePrimer && cartridge.primer_pocket_dia > 0 && cartridge.primer_pocket_depth > 0 && (
                   <rect
                     x={originX}
                     y={centerY - (cartridge.primer_pocket_dia / 2) * scale}
@@ -4350,13 +1903,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
           </>
         )}
 
-        {/* ================= INTERACTIVE SAAMI / CIP DIMENSION CALLOUTS ================= */}
-        {/* ================= INTERACTIVE SAAMI / CIP DIMENSION CALLOUTS ================= */}
-        {activeShowDimensions && (() => {
-          const datumHeadspace = calculateDatumHeadspace(cartridge);
-          const cipDeltaL = calculateCIPDeltaL(cartridge);
-
-          return (
+        {activeShowDimensions && (
             <g id="dimension-callouts-group">
               {/* SAAMI Datum Headspace Line & Circle Overlay */}
               {activeStandard === 'saami' && !isStraightWall(cartridge) && datumHeadspace.datum_length > 0 && (
@@ -4719,22 +2266,9 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
               </g>
             )}
           </g>
-        );
-      })()}
+        )}
         </g>
       </svg>
     </div>
   );
-};
-
-const stepperStyle: React.CSSProperties = {
-  background: 'var(--bg-tertiary)',
-  border: '1px solid var(--border-color)',
-  borderRadius: '4px',
-  color: 'var(--text-secondary)',
-  fontSize: '10px',
-  fontFamily: 'var(--font-mono)',
-  padding: '4px 2px',
-  cursor: 'pointer',
-  textAlign: 'center',
 };

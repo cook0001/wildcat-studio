@@ -11,9 +11,9 @@ import {
   UnitSystem
 } from '../types/cartridge';
 
-export const CU_IN_TO_CM3 = 16.387064;
-export const CM3_TO_GRAINS_H2O = 15.43235835;
-export const CU_IN_TO_GRAINS_H2O = CU_IN_TO_CM3 * CM3_TO_GRAINS_H2O;
+const CU_IN_TO_CM3 = 16.387064;
+const CM3_TO_GRAINS_H2O = 15.43235835;
+const CU_IN_TO_GRAINS_H2O = CU_IN_TO_CM3 * CM3_TO_GRAINS_H2O;
 
 export function isStraightWall(spec: CartridgeSpec): boolean {
   return (
@@ -87,7 +87,7 @@ export function getOuterRadiusAt(spec: CartridgeSpec, z: number): number {
   return getTaperedBodyRadiusAt(spec, z, hasExtractorGroove ? z_body_start : t_rim);
 }
 
-export function getChamberBodyRadiusAt(spec: CartridgeSpec, z: number): number {
+function getChamberBodyRadiusAt(spec: CartridgeSpec, z: number): number {
   if (z > spec.case_length) {
     return spec.bullet_diameter / 2.0;
   }
@@ -609,9 +609,6 @@ export function exportUniversalQDF(spec: CartridgeSpec): string {
   ];
   return lines.join('\n');
 }
-
-// Backward-compatible alias
-export const exportQuickLoadQDF = exportUniversalQDF;
 
 /**
  * Generates the official Wildcat Studio Cartridge Specification (.wildcat / .wcs).

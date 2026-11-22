@@ -16,9 +16,9 @@ This repository ([`cook0001/wildcat-studio`](https://github.com/cook0001/wildcat
 Installers for **macOS (Universal: Apple Silicon & Intel)**, **Windows (x64 & ARM64)**, and **Linux (x64 & ARM64: AppImage / deb / rpm)** are published on the [GitHub Releases](https://github.com/cook0001/wildcat-studio/releases) page alongside `SHA256SUMS.txt`.
 
 - **Auto-Updater**: Release builds check [`latest.json`](https://github.com/cook0001/wildcat-studio/releases/latest/download/latest.json) via `@tauri-apps/plugin-updater`, download platform updates with progress feedback, verify signatures against the bundled Minisign public key, and relaunch natively (`restart_app`).
-- **Tauri Self-Signing**:
+- **Signing & Notarization**:
   - **Updater payload signing**: Controlled by `bundle.createUpdaterArtifacts: true` in [`src-tauri/tauri.conf.json`](src-tauri/tauri.conf.json) and `TAURI_SIGNING_PRIVATE_KEY` (with optional `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`) during builds and [`.github/workflows/release.yml`](.github/workflows/release.yml).
-  - **macOS ad-hoc self-signing**: Configured via `"macOS": { "signingIdentity": "-" }` so local and CI macOS bundles are self-signed without an Apple Developer ID certificate. *(First launch on macOS without Apple notarization may require allowing the app in System Settings -> Privacy & Security.)*
+  - **macOS Developer ID signing & notarization**: Configured with `"hardenedRuntime": true` and `"minimumSystemVersion": "10.15"`. CI signs with `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, and `APPLE_SIGNING_IDENTITY`, and notarizes via App Store Connect API (`APPLE_API_KEY`, `APPLE_API_ISSUER`, `APPLE_API_KEY_P8`). If `APPLE_CERTIFICATE` is omitted, CI falls back to ad-hoc signing (`-`).
 
 ---
 

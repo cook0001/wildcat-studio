@@ -1,6 +1,5 @@
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile, writeTextFile } from '@tauri-apps/plugin-fs';
-import { openPath } from '@tauri-apps/plugin-opener';
 import { invoke } from '@tauri-apps/api/core';
 
 export interface SaveExportOptions {
@@ -11,7 +10,7 @@ export interface SaveExportOptions {
   title?: string;
 }
 
-export interface SaveResult {
+interface SaveResult {
   success: boolean;
   cancelled?: boolean;
   path?: string;
@@ -94,13 +93,6 @@ export async function isTypstAvailable(): Promise<boolean> {
 export async function compileTypstToPdf(typstSource: string): Promise<Uint8Array> {
   const bytes = await invoke<number[]>('compile_typst_pdf', { typstSource });
   return new Uint8Array(bytes);
-}
-
-/**
- * Opens a local file path using the default OS viewer/handler.
- */
-export async function openFileInSystem(filePath: string): Promise<void> {
-  await openPath(filePath);
 }
 
 /**

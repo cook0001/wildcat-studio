@@ -137,6 +137,48 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
+      - name: Prepare macOS Signing & Notarization
+        if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          if [ -n "$APPLE_CERTIFICATE" ]; then
+            {
+              echo "APPLE_CERTIFICATE<<EOF_APPLE_CERT"
+              printf '%s\n' "$APPLE_CERTIFICATE"
+              echo "EOF_APPLE_CERT"
+              echo "APPLE_CERTIFICATE_PASSWORD<<EOF_APPLE_CERT_PW"
+              printf '%s\n' "$APPLE_CERTIFICATE_PASSWORD"
+              echo "EOF_APPLE_CERT_PW"
+            } >> "$GITHUB_ENV"
+            if [ -n "$APPLE_SIGNING_IDENTITY" ]; then
+              echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY" >> "$GITHUB_ENV"
+            fi
+            if [ -n "$APPLE_API_KEY" ] && [ -n "$APPLE_API_ISSUER" ] && [ -n "$APPLE_API_KEY_P8" ]; then
+              KEY_PATH="${RUNNER_TEMP}/AuthKey_${APPLE_API_KEY}.p8"
+              if printf '%s' "$APPLE_API_KEY_P8" | grep -q "BEGIN PRIVATE KEY"; then
+                printf '%s\n' "$APPLE_API_KEY_P8" > "$KEY_PATH"
+              else
+                printf '%s' "$APPLE_API_KEY_P8" | base64 --decode > "$KEY_PATH"
+              fi
+              chmod 600 "$KEY_PATH"
+              echo "APPLE_API_KEY=$APPLE_API_KEY" >> "$GITHUB_ENV"
+              echo "APPLE_API_ISSUER=$APPLE_API_ISSUER" >> "$GITHUB_ENV"
+              echo "APPLE_API_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+              echo "Configured macOS Developer ID signing with App Store Connect API notarization."
+            else
+              echo "Configured macOS Developer ID signing (notarization secrets not set)."
+            fi
+          else
+            echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
+            echo "APPLE_CERTIFICATE not set; falling back to ad-hoc macOS signing."
+          fi
+
       - name: Build Tauri Application
         uses: tauri-apps/tauri-action@v1
         env:
@@ -152,6 +194,10 @@ jobs:
           prerelease: false
           uploadUpdaterJson: false
           args: ${{ matrix.args }}
+
+      - name: Cleanup macOS API Key
+        if: always() && runner.os == 'macOS' && env.APPLE_API_KEY_PATH != ''
+        run: rm -f "$APPLE_API_KEY_PATH"
 
   generate-checksums:
     name: Generate Updater Manifest & SHA256 Checksums

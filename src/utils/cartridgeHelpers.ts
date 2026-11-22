@@ -12,7 +12,7 @@ import {
   isStraightWall,
 } from './volumetrics';
 
-export const AUTO_UPDATE_STORAGE_KEY = 'wildcat_auto_check_updates';
+const AUTO_UPDATE_STORAGE_KEY = 'wildcat_auto_check_updates';
 export const CARTRIDGE_PRESET_COUNT = Object.keys(CARTRIDGE_PRESETS).length;
 
 export function isAutoUpdateEnabled(): boolean {
@@ -88,26 +88,7 @@ export function buildClosedSvgContour(
   return `${d} Z`;
 }
 
-export function buildCartridgeSilhouetteSvgPath(
-  spec: CartridgeSpec,
-  scaleX: number,
-  scaleY: number,
-  offsetX = 0,
-  centerY = 0,
-  steps = 80
-): string {
-  const pts: [number, number][] = [];
-  for (let i = 0; i <= steps; i++) {
-    const z = (i / steps) * spec.case_length;
-    pts.push([z, getOuterRadiusAt(spec, z)]);
-  }
-  return buildClosedSvgContour(
-    pts,
-    (z, r) => `${(offsetX + z * scaleX).toFixed(2)} ${(centerY + r * scaleY).toFixed(2)}`
-  );
-}
-
-export function exportQuickloadVolLineFrontend(spec: CartridgeSpec): string {
+function exportQuickloadVolLineFrontend(spec: CartridgeSpec): string {
   const vol = calculateVolumetricsFrontend(spec);
   const boreArea = Math.PI * (spec.bullet_diameter / 2) ** 2 * 0.992;
   const pressure = spec.max_pressure_bar || 4150;
@@ -135,7 +116,7 @@ function dxfSymmetricLine(layer: string, x1: number, r1: number, x2: number, r2:
   return dxfLine(layer, x1, r1, x2, r2) + dxfLine(layer, x1, -r1, x2, -r2);
 }
 
-export function generateDxfFrontend(spec: CartridgeSpec): string {
+function generateDxfFrontend(spec: CartridgeSpec): string {
   let out = '0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n0\nENDSEC\n';
   out += '0\nSECTION\n2\nTABLES\n0\nTABLE\n2\nLAYER\n70\n5\n';
   out += '0\nLAYER\n2\nOUTER_CASE\n70\n0\n62\n2\n6\nCONTINUOUS\n';
@@ -229,15 +210,23 @@ export function buildCaseAndBulletGeometries(
   const casePts: THREE.Vector2[] = [];
   const tRim = cartridge.rim_thickness;
   const rRim = cartridge.rim_diameter / 2;
-  const pPocketDepth = cartridge.primer_pocket_depth || 0.125;
-  const pPocketR = (cartridge.primer_pocket_dia || 0.21) / 2;
-  const flashR = (cartridge.flash_hole_dia || 0.08) / 2;
+  const hasPrimerPocket =
+    cartridge.rim_type !== 'rimfire' &&
+    cartridge.primer_pocket_dia > 0 &&
+    cartridge.primer_pocket_depth > 0;
+  const pPocketDepth = hasPrimerPocket ? Math.min(cartridge.primer_pocket_depth, cartridge.web_thickness * 0.9) : 0;
+  const pPocketR = hasPrimerPocket ? cartridge.primer_pocket_dia / 2 : 0;
+  const flashR = hasPrimerPocket && cartridge.flash_hole_dia > 0 ? cartridge.flash_hole_dia / 2 : 0;
 
-  casePts.push(new THREE.Vector2(0, pPocketDepth + zOffset));
-  casePts.push(new THREE.Vector2(pPocketR, pPocketDepth + zOffset));
-  casePts.push(new THREE.Vector2(pPocketR, zOffset));
-  casePts.push(new THREE.Vector2(rRim - 0.008, zOffset));
-  casePts.push(new THREE.Vector2(rRim, 0.006 + zOffset));
+  if (hasPrimerPocket) {
+    casePts.push(new THREE.Vector2(0, pPocketDepth + zOffset));
+    casePts.push(new THREE.Vector2(pPocketR, pPocketDepth + zOffset));
+    casePts.push(new THREE.Vector2(pPocketR, zOffset));
+  } else {
+    casePts.push(new THREE.Vector2(0, zOffset));
+  }
+  casePts.push(new THREE.Vector2(Math.max(0.01, rRim - 0.008), zOffset));
+  casePts.push(new THREE.Vector2(rRim, Math.min(0.006, tRim * 0.5) + zOffset));
   casePts.push(new THREE.Vector2(rRim, tRim + zOffset));
 
   const bodySteps = 90;
@@ -254,9 +243,13 @@ export function buildCaseAndBulletGeometries(
     const z = cartridge.web_thickness + (i / cavitySteps) * Math.max(0.01, cartridge.case_length - cartridge.web_thickness);
     casePts.push(new THREE.Vector2(getInnerRadiusAt(cartridge, z), z + zOffset));
   }
-  casePts.push(new THREE.Vector2(flashR, cartridge.web_thickness + zOffset));
-  casePts.push(new THREE.Vector2(flashR, pPocketDepth + zOffset));
-  casePts.push(new THREE.Vector2(0, pPocketDepth + zOffset));
+  if (hasPrimerPocket && flashR > 0) {
+    casePts.push(new THREE.Vector2(flashR, cartridge.web_thickness + zOffset));
+    casePts.push(new THREE.Vector2(flashR, pPocketDepth + zOffset));
+    casePts.push(new THREE.Vector2(0, pPocketDepth + zOffset));
+  } else {
+    casePts.push(new THREE.Vector2(0, cartridge.web_thickness + zOffset));
+  }
 
   const caseGeo = new THREE.LatheGeometry(casePts, 64, 0, phiLength);
   caseGeo.computeVertexNormals();

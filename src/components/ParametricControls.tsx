@@ -1,9 +1,13 @@
 import React, { useState } from 'react';
-import { CartridgeSpec, RimType, CARTRIDGE_PRESETS } from '../types/cartridge';
+import { CartridgeSpec, DimensionStandard, RimType, CARTRIDGE_PRESETS } from '../types/cartridge';
 import { isStraightWall } from '../utils/volumetrics';
 import { BULLET_OPTIONS, getBulletsForCaliber } from '../data/bullets';
 import { applyBulletPresetToCartridge, getActiveBulletPreset } from '../utils/cartridgeHelpers';
 import { Sliders, Shield, ShieldOff, Disc, CircleDot, Crosshair, ChevronDown, ChevronRight, PanelLeftClose, Undo2 } from 'lucide-react';
+
+type NumericCartridgeKey = {
+  [K in keyof CartridgeSpec]-?: NonNullable<CartridgeSpec[K]> extends number ? K : never;
+}[keyof CartridgeSpec];
 
 interface ParametricControlsProps {
   cartridge: CartridgeSpec;
@@ -197,9 +201,9 @@ export const ParametricControls: React.FC<ParametricControlsProps> = ({
     return +inches.toFixed(4);
   };
 
-  const handleValChange = (key: keyof CartridgeSpec, rawVal: number) => {
+  const handleValChange = (key: NumericCartridgeKey, rawVal: number) => {
     const inches = isMetric ? rawVal / 25.4 : rawVal;
-    updateParam(key, inches as any);
+    updateParam(key, inches);
   };
 
   const unitLabel = isMetric ? 'mm' : 'in';
@@ -207,16 +211,16 @@ export const ParametricControls: React.FC<ParametricControlsProps> = ({
 
   const renderSlider = (
     label: string,
-    key: keyof CartridgeSpec,
+    key: NumericCartridgeKey,
     min: number,
     max: number,
     step: number,
     isRaw = false,
     unit = unitLabel
   ) => {
-    const rawVal = cartridge[key] as number;
+    const rawVal = cartridge[key] ?? 0;
     const currentVal = isRaw ? rawVal : displayVal(rawVal);
-    const presetRaw = preset ? (preset[key] as number) : undefined;
+    const presetRaw = preset ? preset[key] : undefined;
     const defaultVal = presetRaw !== undefined ? (isRaw ? presetRaw : displayVal(presetRaw)) : undefined;
 
     return (
@@ -231,14 +235,14 @@ export const ParametricControls: React.FC<ParametricControlsProps> = ({
         unit={unit}
         onChange={(v) => {
           if (isRaw) {
-            updateParam(key, v as any);
+            updateParam(key, v);
           } else {
             handleValChange(key, v);
           }
         }}
         onReset={() => {
           if (presetRaw !== undefined) {
-            updateParam(key, presetRaw as any);
+            updateParam(key, presetRaw);
           }
         }}
       />
@@ -340,7 +344,7 @@ export const ParametricControls: React.FC<ParametricControlsProps> = ({
             <label style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>Standard</label>
             <select
               value={cartridge.standard}
-              onChange={(e) => updateParam('standard', e.target.value as any)}
+              onChange={(e) => updateParam('standard', e.target.value as DimensionStandard)}
               style={{
                 width: '100%',
                 background: 'var(--bg-tertiary)',

@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 import { CheckCircle2, AlertCircle, Info } from 'lucide-react';
 
-export interface ToastMessage {
+interface ToastMessage {
   id: string;
   type: 'success' | 'error' | 'info';
   title: string;

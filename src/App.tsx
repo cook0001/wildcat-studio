@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { CartridgeSpec, CARTRIDGE_PRESETS, VolumetricResult, DraftingStandard, ToleranceDisplayMode } from './types/cartridge';
 import { 
   calculateVolumetricsFrontend, 
-  exportQuickLoadQDF,
+  exportUniversalQDF,
   exportWildcatSpec,
   exportLoadBenchRecipe,
   exportRangeStudioBallistics,
@@ -195,6 +195,7 @@ function AppContent() {
       });
 
     // 2. Listen for live file-open events from Tauri event loop (runtime Finder "Open With" / double-click)
+    let cancelled = false;
     let unlistenFn: (() => void) | null = null;
     listen<{ name: string; path: string; content: string }>('wildcat://open-file', (event) => {
       if (event.payload && event.payload.content) {
@@ -206,6 +207,10 @@ function AppContent() {
       }
     })
       .then((unlisten) => {
+        if (cancelled) {
+          unlisten();
+          return;
+        }
         unlistenFn = unlisten;
       })
       .catch(() => {});
@@ -244,6 +249,7 @@ function AppContent() {
     window.addEventListener('drop', handleDrop);
 
     return () => {
+      cancelled = true;
       if (unlistenFn) unlistenFn();
       window.removeEventListener('dragover', handleDragOver);
       window.removeEventListener('drop', handleDrop);
@@ -345,7 +351,7 @@ function AppContent() {
       {
         defaultFileName: `${safeBaseName}.qdf`,
         filters: [{ name: 'QuickLOAD QDF Data', extensions: ['qdf', 'dat', 'txt'] }],
-        content: exportQuickLoadQDF(cartridge),
+        content: exportUniversalQDF(cartridge),
         mimeType: 'text/plain;charset=utf-8',
         title: 'Export QuickLOAD QDF File',
       },
@@ -392,6 +398,7 @@ function AppContent() {
 
   const sharedBlueprintProps = {
     cartridge,
+    volumetrics,
     onDrawingModeChange: setDrawingMode,
     draftingStandard,
     onDraftingStandardChange: setDraftingStandard,
@@ -616,7 +623,7 @@ function AppContent() {
         isMetric={isMetric}
       />
 
-      {/* Encyclopedic Cartridge Database Browser Modal */}
+      {/* Cartridge Database Browser Modal */}
       <OpenCartridgeModal
         isOpen={isOpenCartridgeModalOpen}
         onClose={() => setIsOpenCartridgeModalOpen(false)}

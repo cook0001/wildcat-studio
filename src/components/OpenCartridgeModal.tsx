@@ -464,7 +464,7 @@ export const OpenCartridgeModal: React.FC<OpenCartridgeModalProps> = ({
                 OPEN CARTRIDGE SPECIFICATION
               </div>
               <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                Select a cartridge data record from the encyclopedic database or load custom wildcat files
+                Select a cartridge record from the built-in library or load custom wildcat files
               </div>
             </div>
           </div>
