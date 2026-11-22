@@ -1,9 +1,22 @@
-import React, { useState } from 'react';
-import { CartridgeSpec, DimensionStandard, RimType, CARTRIDGE_PRESETS } from '../types/cartridge';
-import { isStraightWall } from '../utils/volumetrics';
+import React, { useState, useMemo } from 'react';
+import {
+  CartridgeSpec,
+  DimensionStandard,
+  RimType,
+  BulletProfile,
+  BulletOgiveType,
+  BulletMaterial,
+  ChamberOverrides,
+  CARTRIDGE_PRESETS,
+} from '../types/cartridge';
+import {
+  isStraightWall,
+  resolveBulletProfile,
+  resolveChamberSpec,
+} from '../utils/volumetrics';
 import { BULLET_OPTIONS, getBulletsForCaliber } from '../data/bullets';
 import { applyBulletPresetToCartridge, getActiveBulletPreset } from '../utils/cartridgeHelpers';
-import { Sliders, Shield, ShieldOff, Disc, CircleDot, Crosshair, ChevronDown, ChevronRight, PanelLeftClose, Undo2 } from 'lucide-react';
+import { Sliders, Shield, ShieldOff, Disc, CircleDot, Crosshair, ChevronDown, ChevronRight, PanelLeftClose, Undo2, Wrench } from 'lucide-react';
 
 type NumericCartridgeKey = {
   [K in keyof CartridgeSpec]-?: NonNullable<CartridgeSpec[K]> extends number ? K : never;
@@ -24,13 +37,13 @@ export const ParametricControls: React.FC<ParametricControlsProps> = ({
   isOpen = true,
   onClose,
 }) => {
-  const SECTION_KEYS = ['rim', 'body', 'shoulder', 'internal', 'bullet'];
+  const SECTION_KEYS = ['rim', 'body', 'shoulder', 'internal', 'bullet', 'chamber'];
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(() => {
     try {
       const saved = localStorage.getItem('wildcat_sidebar_collapsed_sections');
-      return saved ? JSON.parse(saved) : {};
+      return saved ? { chamber: true, ...JSON.parse(saved) } : { chamber: true };
     } catch {
-      return {};
+      return { chamber: true };
     }
   });
   const [showShoulderMenu, setShowShoulderMenu] = useState<boolean>(false);
@@ -190,9 +203,59 @@ export const ParametricControls: React.FC<ParametricControlsProps> = ({
           updated.shoulder_length = +(dr / Math.tan(rad)).toFixed(4);
         }
       }
+    } else if (key === 'coal') {
+      const seat = Math.max(0, updated.case_length + updated.bullet_length - updated.coal);
+      updated.seating_depth = +seat.toFixed(4);
+    } else if (key === 'seating_depth') {
+      updated.coal = +Math.max(updated.case_length, updated.case_length + updated.bullet_length - updated.seating_depth).toFixed(4);
+    } else if (key === 'case_length' || key === 'bullet_length') {
+      const maxCoal = updated.case_length + updated.bullet_length;
+      if (updated.coal > maxCoal) {
+        updated.coal = +maxCoal.toFixed(4);
+      }
+      updated.seating_depth = +Math.max(0, maxCoal - updated.coal).toFixed(4);
     }
 
     onChange(updated);
+  };
+
+  const bulletProfile = useMemo(() => resolveBulletProfile(cartridge), [cartridge]);
+  const chamberSpec = useMemo(() => resolveChamberSpec(cartridge), [cartridge]);
+  const defaultChamberSpec = useMemo(
+    () => resolveChamberSpec({ ...cartridge, chamber_overrides: undefined }),
+    [cartridge]
+  );
+
+  const hasChamberOverrides = Boolean(
+    cartridge.chamber_overrides && Object.keys(cartridge.chamber_overrides).length > 0
+  );
+
+  const updateBulletProfile = (patch: Partial<BulletProfile>) => {
+    const next: BulletProfile = { ...bulletProfile, ...patch };
+    if (next.base_type === 'flat_base') {
+      next.boat_tail_length_in = 0;
+      next.boat_tail_base_dia_in = cartridge.bullet_diameter;
+    } else if (next.boat_tail_length_in <= 0.001) {
+      next.boat_tail_length_in = +(cartridge.bullet_length * 0.16).toFixed(4);
+      next.boat_tail_base_dia_in = +(cartridge.bullet_diameter * 0.84).toFixed(4);
+    }
+    if (next.material === 'polymer_tip' && (next.plastic_tip_length_in ?? 0) <= 0) {
+      next.plastic_tip_length_in = +(cartridge.bullet_length * 0.12).toFixed(4);
+    } else if (next.material !== 'polymer_tip' && patch.material !== undefined) {
+      next.plastic_tip_length_in = 0;
+    }
+    onChange({ ...cartridge, bullet_profile: next });
+  };
+
+  const updateChamberOverride = <K extends keyof ChamberOverrides>(key: K, val: number | undefined) => {
+    const nextOverrides: ChamberOverrides = { ...(cartridge.chamber_overrides ?? {}) };
+    if (val === undefined || !Number.isFinite(val)) {
+      delete nextOverrides[key];
+    } else {
+      nextOverrides[key] = +val.toFixed(5);
+    }
+    const cleaned = Object.keys(nextOverrides).length > 0 ? nextOverrides : undefined;
+    onChange({ ...cartridge, chamber_overrides: cleaned });
   };
 
   // Convert for display
@@ -743,6 +806,32 @@ export const ParametricControls: React.FC<ParametricControlsProps> = ({
               {renderSlider("Shoulder Length (L₂ - L₁)", "shoulder_length", isMetric ? 0.0 : 0.000, isMetric ? 12.0 : 0.450, isMetric ? 0.05 : 0.002)}
               {renderSlider("Neck Dia Mouth (H₂)", "neck_diameter_mouth", isMetric ? 4.0 : 0.180, isMetric ? 18.0 : 0.720, isMetric ? 0.02 : 0.001)}
               {renderSlider("Total Case Length (L₃)", "case_length", isMetric ? 10.0 : 0.400, isMetric ? 120.0 : 4.500, isMetric ? 0.1 : 0.005)}
+              {!isStraightWall(cartridge) && (
+                <>
+                  <SliderField
+                    label="Body-Shoulder Fillet (R₁)"
+                    value={displayVal(cartridge.shoulder_body_fillet_r ?? 0.060)}
+                    defaultValue={displayVal(preset?.shoulder_body_fillet_r ?? 0.060)}
+                    min={0}
+                    max={isMetric ? 4.0 : 0.160}
+                    step={isMetric ? 0.05 : 0.002}
+                    unit={unitLabel}
+                    onChange={(v) => updateParam('shoulder_body_fillet_r', isMetric ? v / 25.4 : v)}
+                    onReset={() => updateParam('shoulder_body_fillet_r', preset?.shoulder_body_fillet_r ?? 0.060)}
+                  />
+                  <SliderField
+                    label="Shoulder-Neck Fillet (R₂)"
+                    value={displayVal(cartridge.shoulder_neck_fillet_r ?? 0.040)}
+                    defaultValue={displayVal(preset?.shoulder_neck_fillet_r ?? 0.040)}
+                    min={0}
+                    max={isMetric ? 3.0 : 0.120}
+                    step={isMetric ? 0.05 : 0.002}
+                    unit={unitLabel}
+                    onChange={(v) => updateParam('shoulder_neck_fillet_r', isMetric ? v / 25.4 : v)}
+                    onReset={() => updateParam('shoulder_neck_fillet_r', preset?.shoulder_neck_fillet_r ?? 0.040)}
+                  />
+                </>
+              )}
             </div>
           )}
         </div>
@@ -936,6 +1025,355 @@ export const ParametricControls: React.FC<ParametricControlsProps> = ({
               {renderSlider("Bullet Weight", "bullet_weight_grains", 30, 450, 1, true, "grains")}
               {renderSlider("Seating Depth (Displacement)", "seating_depth", isMetric ? 2.0 : 0.100, isMetric ? 25.0 : 1.000, isMetric ? 0.1 : 0.005)}
               {renderSlider("Cartridge Overall Length (COAL)", "coal", isMetric ? 30.0 : 1.200, isMetric ? 120.0 : 4.500, isMetric ? 0.1 : 0.005)}
+
+              {/* Parametric Bullet Geometry & Construction */}
+              <div style={{
+                marginTop: '10px',
+                padding: '8px',
+                background: 'var(--bg-tertiary)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '6px',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--cad-copper)', letterSpacing: '0.4px' }}>
+                    BULLET PROFILE & CONSTRUCTION
+                  </span>
+                  {cartridge.bullet_profile && (
+                    <button
+                      type="button"
+                      onClick={() => onChange({ ...cartridge, bullet_profile: undefined })}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'var(--cad-cyan)',
+                        fontSize: '9.5px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        padding: 0,
+                      }}
+                    >
+                      Auto
+                    </button>
+                  )}
+                </div>
+
+                {/* Base Style Toggle */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px', marginBottom: '8px' }}>
+                  {(['boat_tail', 'flat_base'] as const).map((bt) => {
+                    const active = bulletProfile.base_type === bt;
+                    return (
+                      <button
+                        key={bt}
+                        type="button"
+                        onClick={() => updateBulletProfile({ base_type: bt })}
+                        style={{
+                          padding: '4px 6px',
+                          fontSize: '10px',
+                          fontWeight: active ? 700 : 500,
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          background: active ? 'rgba(240, 136, 62, 0.22)' : 'var(--bg-secondary)',
+                          border: `1px solid ${active ? 'var(--cad-copper)' : 'var(--border-color)'}`,
+                          color: active ? '#fff' : 'var(--text-secondary)',
+                        }}
+                      >
+                        {bt === 'boat_tail' ? 'Boat-Tail' : 'Flat Base'}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '8px' }}>
+                  <div>
+                    <label style={{ fontSize: '9.5px', color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>Ogive Geometry</label>
+                    <select
+                      value={bulletProfile.ogive_type}
+                      onChange={(e) => updateBulletProfile({ ogive_type: e.target.value as BulletOgiveType })}
+                      style={{
+                        width: '100%',
+                        background: 'var(--bg-secondary)',
+                        color: 'var(--text-primary)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '4px',
+                        padding: '3px 4px',
+                        fontSize: '10px',
+                      }}
+                    >
+                      <option value="tangent">Tangent</option>
+                      <option value="secant">Secant (VLD)</option>
+                      <option value="hybrid">Hybrid</option>
+                      <option value="spitzer">Spitzer</option>
+                      <option value="round_nose">Round Nose</option>
+                      <option value="flat_nose">Flat Nose</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '9.5px', color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>Construction</label>
+                    <select
+                      value={bulletProfile.material}
+                      onChange={(e) => updateBulletProfile({ material: e.target.value as BulletMaterial })}
+                      style={{
+                        width: '100%',
+                        background: 'var(--bg-secondary)',
+                        color: 'var(--text-primary)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '4px',
+                        padding: '3px 4px',
+                        fontSize: '10px',
+                      }}
+                    >
+                      <option value="lead_core">Jacketed Lead</option>
+                      <option value="polymer_tip">Polymer-Tipped</option>
+                      <option value="monolithic_copper">Monolithic Copper</option>
+                      <option value="solid_brass">Solid Brass</option>
+                    </select>
+                  </div>
+                </div>
+
+                {bulletProfile.base_type === 'boat_tail' && (
+                  <>
+                    <SliderField
+                      label="Boat-Tail Length"
+                      value={displayVal(bulletProfile.boat_tail_length_in)}
+                      min={0}
+                      max={isMetric ? 12.0 : 0.450}
+                      step={isMetric ? 0.05 : 0.005}
+                      unit={unitLabel}
+                      onChange={(v) => updateBulletProfile({ boat_tail_length_in: isMetric ? v / 25.4 : v })}
+                    />
+                    <SliderField
+                      label="Boat-Tail Base Dia"
+                      value={displayVal(bulletProfile.boat_tail_base_dia_in)}
+                      min={displayVal(cartridge.bullet_diameter * 0.55)}
+                      max={displayVal(cartridge.bullet_diameter)}
+                      step={isMetric ? 0.05 : 0.002}
+                      unit={unitLabel}
+                      onChange={(v) => updateBulletProfile({ boat_tail_base_dia_in: isMetric ? v / 25.4 : v })}
+                    />
+                  </>
+                )}
+
+                <SliderField
+                  label="Ogive Radius (CRH)"
+                  value={+bulletProfile.ogive_radius_calibers.toFixed(1)}
+                  min={1.5}
+                  max={20.0}
+                  step={0.5}
+                  unit="cal"
+                  onChange={(v) => updateBulletProfile({ ogive_radius_calibers: v })}
+                />
+
+                <SliderField
+                  label="Meplat Diameter"
+                  value={displayVal(bulletProfile.meplat_diameter_in)}
+                  min={0}
+                  max={displayVal(cartridge.bullet_diameter * 0.85)}
+                  step={isMetric ? 0.05 : 0.002}
+                  unit={unitLabel}
+                  onChange={(v) => updateBulletProfile({ meplat_diameter_in: isMetric ? v / 25.4 : v })}
+                />
+
+                {(bulletProfile.material === 'polymer_tip' || (bulletProfile.plastic_tip_length_in ?? 0) > 0) && (
+                  <SliderField
+                    label="Polymer Tip Length"
+                    value={displayVal(bulletProfile.plastic_tip_length_in ?? 0)}
+                    min={0}
+                    max={isMetric ? 10.0 : 0.350}
+                    step={isMetric ? 0.05 : 0.005}
+                    unit={unitLabel}
+                    onChange={(v) => updateBulletProfile({ plastic_tip_length_in: isMetric ? v / 25.4 : v })}
+                  />
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* SECTION 6: Chamber & Throat (Hybrid SAAMI/C.I.P. + Overrides) */}
+        <div style={{ marginBottom: '8px', border: '1px solid var(--border-color)', borderRadius: '6px', background: 'var(--bg-card)' }}>
+          <button
+            onClick={() => toggleSection('chamber')}
+            style={{
+              width: '100%',
+              padding: '8px 10px',
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--text-primary)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+              fontWeight: 600,
+              fontSize: '12px'
+            }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Wrench size={14} color="#eab308" /> Chamber & Throat
+              {hasChamberOverrides && (
+                <span style={{
+                  fontSize: '8.5px',
+                  fontWeight: 700,
+                  padding: '1px 5px',
+                  borderRadius: '3px',
+                  background: 'rgba(234, 179, 8, 0.2)',
+                  color: '#eab308',
+                  border: '1px solid rgba(234, 179, 8, 0.4)',
+                }}>
+                  CUSTOM
+                </span>
+              )}
+            </span>
+            {collapsedSections['chamber'] ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+          </button>
+
+          {!collapsedSections['chamber'] && (
+            <div style={{ padding: '8px 10px', borderTop: '1px solid var(--border-color)' }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '10px',
+                padding: '6px 8px',
+                background: 'var(--bg-tertiary)',
+                borderRadius: '5px',
+                border: '1px solid var(--border-color)',
+              }}>
+                <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>
+                  Mode: <strong style={{ color: hasChamberOverrides ? '#eab308' : 'var(--cad-cyan)' }}>
+                    {hasChamberOverrides ? 'Custom Overrides' : `Auto ${cartridge.standard}`}
+                  </strong>
+                </span>
+                {hasChamberOverrides && (
+                  <button
+                    type="button"
+                    id="btn-reset-chamber-overrides"
+                    onClick={() => onChange({ ...cartridge, chamber_overrides: undefined })}
+                    style={{
+                      background: 'rgba(234, 179, 8, 0.15)',
+                      border: '1px solid rgba(234, 179, 8, 0.45)',
+                      color: '#eab308',
+                      borderRadius: '4px',
+                      padding: '2px 7px',
+                      fontSize: '9.5px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Reset Defaults
+                  </button>
+                )}
+              </div>
+
+              <SliderField
+                label="Bore Dia (Lands)"
+                value={displayVal(chamberSpec.pilot_diameter)}
+                defaultValue={displayVal(defaultChamberSpec.pilot_diameter)}
+                min={displayVal(Math.max(0.140, cartridge.bullet_diameter - 0.030))}
+                max={displayVal(cartridge.bullet_diameter + 0.005)}
+                step={isMetric ? 0.01 : 0.0005}
+                unit={unitLabel}
+                onChange={(v) => updateChamberOverride('bore_diameter', isMetric ? v / 25.4 : v)}
+                onReset={() => updateChamberOverride('bore_diameter', undefined)}
+              />
+              <SliderField
+                label="Groove Diameter"
+                value={displayVal(chamberSpec.groove_diameter)}
+                defaultValue={displayVal(defaultChamberSpec.groove_diameter)}
+                min={displayVal(Math.max(0.150, cartridge.bullet_diameter - 0.015))}
+                max={displayVal(cartridge.bullet_diameter + 0.015)}
+                step={isMetric ? 0.01 : 0.0005}
+                unit={unitLabel}
+                onChange={(v) => updateChamberOverride('groove_diameter', isMetric ? v / 25.4 : v)}
+                onReset={() => updateChamberOverride('groove_diameter', undefined)}
+              />
+              <SliderField
+                label="Freebore Diameter"
+                value={displayVal(chamberSpec.freebore_dia)}
+                defaultValue={displayVal(defaultChamberSpec.freebore_dia)}
+                min={displayVal(cartridge.bullet_diameter - 0.002)}
+                max={displayVal(cartridge.bullet_diameter + 0.015)}
+                step={isMetric ? 0.01 : 0.0005}
+                unit={unitLabel}
+                onChange={(v) => updateChamberOverride('freebore_diameter', isMetric ? v / 25.4 : v)}
+                onReset={() => updateChamberOverride('freebore_diameter', undefined)}
+              />
+              <SliderField
+                label="Freebore Length"
+                value={displayVal(chamberSpec.freebore_length)}
+                defaultValue={displayVal(defaultChamberSpec.freebore_length)}
+                min={0}
+                max={isMetric ? 15.0 : 0.600}
+                step={isMetric ? 0.05 : 0.005}
+                unit={unitLabel}
+                onChange={(v) => updateChamberOverride('freebore_length', isMetric ? v / 25.4 : v)}
+                onReset={() => updateChamberOverride('freebore_length', undefined)}
+              />
+              <SliderField
+                label="Leade Angle"
+                value={+chamberSpec.leade_angle_deg.toFixed(2)}
+                defaultValue={+defaultChamberSpec.leade_angle_deg.toFixed(2)}
+                min={0.5}
+                max={5.0}
+                step={0.25}
+                unit="°"
+                onChange={(v) => updateChamberOverride('leade_angle_deg', v)}
+                onReset={() => updateChamberOverride('leade_angle_deg', undefined)}
+              />
+              <SliderField
+                label="Neck Clearance (ΔH₂)"
+                value={displayVal(chamberSpec.chamber_neck_dia - cartridge.neck_diameter_mouth)}
+                defaultValue={displayVal(defaultChamberSpec.chamber_neck_dia - cartridge.neck_diameter_mouth)}
+                min={isMetric ? -0.05 : -0.002}
+                max={isMetric ? 0.40 : 0.015}
+                step={isMetric ? 0.01 : 0.0005}
+                unit={unitLabel}
+                onChange={(v) => updateChamberOverride('neck_clearance', isMetric ? v / 25.4 : v)}
+                onReset={() => updateChamberOverride('neck_clearance', undefined)}
+              />
+              <SliderField
+                label="Base Clearance (ΔP₁)"
+                value={displayVal(chamberSpec.chamber_base_dia - cartridge.base_diameter)}
+                defaultValue={displayVal(defaultChamberSpec.chamber_base_dia - cartridge.base_diameter)}
+                min={0}
+                max={isMetric ? 0.25 : 0.010}
+                step={isMetric ? 0.01 : 0.0005}
+                unit={unitLabel}
+                onChange={(v) => updateChamberOverride('base_clearance', isMetric ? v / 25.4 : v)}
+                onReset={() => updateChamberOverride('base_clearance', undefined)}
+              />
+              <SliderField
+                label="Shoulder Clearance (ΔP₂)"
+                value={displayVal(chamberSpec.chamber_shoulder_dia - cartridge.shoulder_start_diameter)}
+                defaultValue={displayVal(defaultChamberSpec.chamber_shoulder_dia - cartridge.shoulder_start_diameter)}
+                min={0}
+                max={isMetric ? 0.25 : 0.010}
+                step={isMetric ? 0.01 : 0.0005}
+                unit={unitLabel}
+                onChange={(v) => updateChamberOverride('shoulder_clearance', isMetric ? v / 25.4 : v)}
+                onReset={() => updateChamberOverride('shoulder_clearance', undefined)}
+              />
+              <SliderField
+                label="Trim Clearance (ΔL₃)"
+                value={displayVal(chamberSpec.chamber_length - cartridge.case_length)}
+                defaultValue={displayVal(defaultChamberSpec.chamber_length - cartridge.case_length)}
+                min={0}
+                max={isMetric ? 1.0 : 0.040}
+                step={isMetric ? 0.02 : 0.001}
+                unit={unitLabel}
+                onChange={(v) => updateChamberOverride('length_clearance', isMetric ? v / 25.4 : v)}
+                onReset={() => updateChamberOverride('length_clearance', undefined)}
+              />
+              <SliderField
+                label="Headspace Clearance"
+                value={displayVal(chamberSpec.headspace_clearance)}
+                defaultValue={displayVal(defaultChamberSpec.headspace_clearance)}
+                min={0}
+                max={isMetric ? 0.35 : 0.015}
+                step={isMetric ? 0.01 : 0.0005}
+                unit={unitLabel}
+                onChange={(v) => updateChamberOverride('headspace_clearance', isMetric ? v / 25.4 : v)}
+                onReset={() => updateChamberOverride('headspace_clearance', undefined)}
+              />
             </div>
           )}
         </div>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { CartridgeSpec } from '../types/cartridge';
-import { generateReamerSpecFrontend } from '../utils/volumetrics';
+import { generateReamerSpecFrontend, analyzeChamberCollision } from '../utils/volumetrics';
 import { saveExportFile, openStandalonePrintWindow, openNativePdfPrint, isTypstAvailable, compileTypstToPdf } from '../utils/fileExport';
 import { generateReamerTypst } from '../utils/typstTemplates';
 import { escapeHtml } from '../utils/cartridgeHelpers';
@@ -13,16 +13,19 @@ interface ReamerModalProps {
 }
 
 type ManufacturerFormat = 'jgs' | 'ptg' | 'manson' | 'clymer';
-type NeckFitOption = 'factory' | 'fitted' | 'tight';
+type NeckFitOption = 'factory' | 'fitted' | 'tight' | 'custom';
 type ToolType = 'finisher' | 'rougher' | 'neck_throat';
 
 export const ReamerModal: React.FC<ReamerModalProps> = ({ cartridge, isMetric }) => {
+  const baseReamer = generateReamerSpecFrontend(cartridge);
+  const hasCustomNeck = cartridge.chamber_overrides?.neck_clearance !== undefined;
+
   const [activeTab, setActiveTab] = useState<'order' | 'cad_print'>('order');
   const [manufacturer, setManufacturer] = useState<ManufacturerFormat>('jgs');
   const [toolType, setToolType] = useState<ToolType>('finisher');
   const [pilotType, setPilotType] = useState<'floating' | 'solid'>('floating');
-  const [neckFit, setNeckFit] = useState<NeckFitOption>('fitted');
-  const [leadeAngle, setLeadeAngle] = useState<number>(1.5); // 1.5° = 1° 30'
+  const [neckFit, setNeckFit] = useState<NeckFitOption>(hasCustomNeck ? 'custom' : 'fitted');
+  const [leadeAngle, setLeadeAngle] = useState<number>(baseReamer.leade_angle_deg);
   const [copied, setCopied] = useState(false);
 
   // Gunsmith / Shop Metadata
@@ -36,10 +39,24 @@ export const ReamerModal: React.FC<ReamerModalProps> = ({ cartridge, isMetric })
     setBulletTarget(`${cartridge.bullet_weight_grains}gr Match Target`);
   }, [cartridge.id, cartridge.bullet_weight_grains]);
 
-  const baseReamer = generateReamerSpecFrontend(cartridge);
+  useEffect(() => {
+    setLeadeAngle(baseReamer.leade_angle_deg);
+    if (cartridge.chamber_overrides?.neck_clearance !== undefined) {
+      setNeckFit('custom');
+    } else if (neckFit === 'custom') {
+      setNeckFit('fitted');
+    }
+  }, [cartridge.id, baseReamer.leade_angle_deg, cartridge.chamber_overrides?.neck_clearance]);
 
-  // Compute Neck Diameter based on Neck Fit Selection
-  const neckClearance = neckFit === 'factory' ? 0.0050 : neckFit === 'fitted' ? 0.0030 : 0.0015;
+  // Compute Neck Diameter based on Neck Fit Selection (preserving sidebar override when 'custom')
+  const neckClearance =
+    neckFit === 'custom'
+      ? baseReamer.chamber_neck_dia - cartridge.neck_diameter_mouth
+      : neckFit === 'factory'
+      ? 0.0050
+      : neckFit === 'fitted'
+      ? 0.0030
+      : 0.0015;
   const chamberNeckDia = cartridge.neck_diameter_mouth + neckClearance;
 
   // Rougher offset if rougher selected
@@ -56,6 +73,8 @@ export const ReamerModal: React.FC<ReamerModalProps> = ({ cartridge, isMetric })
     chamber_length: chamberLen,
     leade_angle_deg: leadeAngle,
   };
+
+  const collision = analyzeChamberCollision(cartridge, customReamerSpec);
 
   // Bushing Range for Floating Pilot
   const nominalBore = baseReamer.pilot_diameter;
@@ -358,7 +377,7 @@ Date: ${new Date().toLocaleDateString()}
           cartridge={cartridge}
           isMetric={isMetric}
           leadeAngle={leadeAngle}
-          neckFit={neckFit}
+          neckFit={neckFit === 'custom' ? 'fitted' : neckFit}
           pilotType={pilotType}
         />
       ) : (
@@ -460,6 +479,11 @@ Date: ${new Date().toLocaleDateString()}
               fontSize: '12px',
             }}
           >
+            {hasCustomNeck && (
+              <option value="custom">
+                Custom Chamber Override ({((baseReamer.chamber_neck_dia - cartridge.neck_diameter_mouth) * 1000).toFixed(1)} thou)
+              </option>
+            )}
             <option value="factory">Factory Clearance (+0.005" Release)</option>
             <option value="fitted">No-Turn Fitted Neck (+0.003" Release)</option>
             <option value="tight">Tight-Neck (+0.0015" - Turn Brass)</option>
@@ -507,6 +531,9 @@ Date: ${new Date().toLocaleDateString()}
               fontSize: '12px',
             }}
           >
+            {![1.5, 1.0, 0.5].includes(leadeAngle) && (
+              <option value={leadeAngle}>{leadeAngle.toFixed(2)}° (Custom Chamber Override)</option>
+            )}
             <option value={1.5}>1° 30' (Standard SAAMI Factory)</option>
             <option value={1.0}>1° 00' (Match / VLD Streamlined)</option>
             <option value={0.5}>0° 30' (Ultra Low-Drag Benchrest)</option>
@@ -665,34 +692,48 @@ Date: ${new Date().toLocaleDateString()}
               <tr style={{ borderBottom: '1px solid #1e283b' }}>
                 <td style={{ padding: '7px 4px', color: 'var(--text-secondary, #94a3b8)' }}>Chamber Base (P₁')</td>
                 <td style={{ padding: '7px 4px', fontWeight: 700, color: '#fff' }}>{fmt(chamberBaseDia)}</td>
-                <td style={{ padding: '7px 4px', color: '#34d399' }}>+0.0020" diametrical</td>
+                <td style={{ padding: '7px 4px', color: '#34d399' }}>
+                  +{((chamberBaseDia - cartridge.base_diameter) * 1000).toFixed(1)} thou
+                </td>
               </tr>
               <tr style={{ borderBottom: '1px solid #1e283b' }}>
                 <td style={{ padding: '7px 4px', color: 'var(--text-secondary, #94a3b8)' }}>Shoulder Start (P₂')</td>
                 <td style={{ padding: '7px 4px', fontWeight: 700, color: '#fff' }}>{fmt(chamberShoulderDia)}</td>
-                <td style={{ padding: '7px 4px', color: '#34d399' }}>+0.0020" diametrical</td>
+                <td style={{ padding: '7px 4px', color: '#34d399' }}>
+                  +{((chamberShoulderDia - cartridge.shoulder_start_diameter) * 1000).toFixed(1)} thou
+                </td>
               </tr>
               <tr style={{ borderBottom: '1px solid #1e283b' }}>
                 <td style={{ padding: '7px 4px', color: 'var(--text-secondary, #94a3b8)' }}>Chamber Neck (H₂')</td>
                 <td style={{ padding: '7px 4px', fontWeight: 700, color: '#fff' }}>{fmt(chamberNeckDia)}</td>
-                <td style={{ padding: '7px 4px', color: neckFit === 'tight' ? '#f59e0b' : '#34d399' }}>
+                <td style={{ padding: '7px 4px', color: neckClearance < 0.002 ? '#f59e0b' : '#34d399' }}>
                   +{(neckClearance * 1000).toFixed(1)} thou ({neckFit})
                 </td>
               </tr>
               <tr style={{ borderBottom: '1px solid #1e283b' }}>
                 <td style={{ padding: '7px 4px', color: 'var(--text-secondary, #94a3b8)' }}>Chamber Length (L₃')</td>
                 <td style={{ padding: '7px 4px', fontWeight: 700, color: '#fff' }}>{fmt(chamberLen, 3)}</td>
-                <td style={{ padding: '7px 4px', color: 'var(--cad-cyan, #00f0ff)' }}>+0.0150" trim clearance</td>
+                <td style={{ padding: '7px 4px', color: 'var(--cad-cyan, #00f0ff)' }}>
+                  +{((chamberLen - cartridge.case_length) * 1000).toFixed(1)} thou trim
+                </td>
               </tr>
               <tr style={{ borderBottom: '1px solid #1e283b' }}>
                 <td style={{ padding: '7px 4px', color: 'var(--text-secondary, #94a3b8)' }}>Freebore Diameter</td>
                 <td style={{ padding: '7px 4px', fontWeight: 700, color: '#f59e0b' }}>{fmt(baseReamer.freebore_dia)}</td>
-                <td style={{ padding: '7px 4px', color: 'var(--text-secondary, #94a3b8)' }}>Bullet + 0.0005"</td>
+                <td style={{ padding: '7px 4px', color: 'var(--text-secondary, #94a3b8)' }}>
+                  Bullet +{((baseReamer.freebore_dia - cartridge.bullet_diameter) * 1000).toFixed(1)} thou
+                </td>
               </tr>
               <tr style={{ borderBottom: '1px solid #1e283b' }}>
-                <td style={{ padding: '7px 4px', color: 'var(--text-secondary, #94a3b8)' }}>Freebore Length</td>
-                <td style={{ padding: '7px 4px', fontWeight: 700, color: '#f59e0b' }}>{fmt(baseReamer.freebore_length, 3)}</td>
-                <td style={{ padding: '7px 4px', color: 'var(--text-secondary, #94a3b8)' }}>Match throat</td>
+                <td style={{ padding: '7px 4px', color: 'var(--text-secondary, #94a3b8)' }}>Freebore / Lands Jump</td>
+                <td style={{ padding: '7px 4px', fontWeight: 700, color: collision.jump_to_lands_in < 0 ? '#f87171' : '#f59e0b' }}>
+                  {fmt(baseReamer.freebore_length, 3)}
+                </td>
+                <td style={{ padding: '7px 4px', color: collision.jump_to_lands_in < 0 ? '#f87171' : '#38bdf8' }}>
+                  {collision.jump_to_lands_in >= 0
+                    ? `Jump +${fmt(collision.jump_to_lands_in, 3)} (Jam ${fmt(collision.jam_coal_in, 3)})`
+                    : `JAM ${fmt(collision.jump_to_lands_in, 3)}`}
+                </td>
               </tr>
               <tr style={{ borderBottom: '1px solid #1e283b' }}>
                 <td style={{ padding: '7px 4px', color: 'var(--text-secondary, #94a3b8)' }}>Throat Leade Angle</td>
@@ -700,9 +741,13 @@ Date: ${new Date().toLocaleDateString()}
                 <td style={{ padding: '7px 4px', color: 'var(--text-secondary, #94a3b8)' }}>Forcing cone angle</td>
               </tr>
               <tr>
-                <td style={{ padding: '7px 4px', color: 'var(--text-secondary, #94a3b8)' }}>Pilot Bushing (Bore)</td>
-                <td style={{ padding: '7px 4px', fontWeight: 700, color: 'var(--cad-cyan, #00f0ff)' }}>{fmt(nominalBore)}</td>
-                <td style={{ padding: '7px 4px', color: 'var(--text-secondary, #94a3b8)' }}>Land-to-land slip fit</td>
+                <td style={{ padding: '7px 4px', color: 'var(--text-secondary, #94a3b8)' }}>Bore / Groove (Area)</td>
+                <td style={{ padding: '7px 4px', fontWeight: 700, color: 'var(--cad-cyan, #00f0ff)' }}>
+                  {fmt(nominalBore)} / {fmt(baseReamer.groove_diameter)}
+                </td>
+                <td style={{ padding: '7px 4px', color: 'var(--text-secondary, #94a3b8)' }}>
+                  {baseReamer.rifled_bore_area_sq_in.toFixed(4)} in² rifled
+                </td>
               </tr>
             </tbody>
           </table>

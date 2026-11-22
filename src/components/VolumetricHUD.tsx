@@ -1,15 +1,21 @@
 import React, { useState } from 'react';
 import { VolumetricResult, CartridgeSpec } from '../types/cartridge';
-import { Droplet, Flame, Target, Compass, Zap, Gauge, ChevronUp, ChevronDown } from 'lucide-react';
+import { Droplet, Flame, Scale, Compass, Zap, Gauge, ChevronUp, ChevronDown } from 'lucide-react';
 
 interface VolumetricHUDProps {
   volumetrics: VolumetricResult;
   cartridge: CartridgeSpec;
+  isMetric?: boolean;
+  onChangeBarrelLength?: (inches: number) => void;
 }
+
+const BARREL_LENGTH_OPTIONS = [16, 18, 20, 22, 24, 26, 28, 30];
 
 export const VolumetricHUD: React.FC<VolumetricHUDProps> = ({
   volumetrics,
   cartridge,
+  isMetric = false,
+  onChangeBarrelLength,
 }) => {
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
     return localStorage.getItem('wildcat_hud_collapsed') === 'true';
@@ -25,6 +31,10 @@ export const VolumetricHUD: React.FC<VolumetricHUDProps> = ({
 
   const pressureBar = cartridge.max_pressure_bar || 4150;
   const pressurePsi = Math.round(pressureBar * 14.5038);
+  const barrelLenIn = volumetrics.barrel_length_in || cartridge.barrel_length_in || 24;
+  const boreAreaText = isMetric
+    ? `${volumetrics.rifled_bore_area_mm2.toFixed(1)} mm²`
+    : `${volumetrics.rifled_bore_area_sq_in.toFixed(4)} in²`;
 
   // Collapsed Minimal Bar
   if (isCollapsed) {
@@ -58,8 +68,14 @@ export const VolumetricHUD: React.FC<VolumetricHUDProps> = ({
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <Scale size={13} color="var(--cad-copper)" />
+            <span style={{ color: 'var(--text-muted)' }}>Brass:</span>
+            <span style={{ fontWeight: 700, color: 'var(--cad-copper)' }}>{volumetrics.brass_case_weight_grains} gr</span>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
             <Zap size={13} color="#3fb950" />
-            <span style={{ color: 'var(--text-muted)' }}>Exp Ratio:</span>
+            <span style={{ color: 'var(--text-muted)' }}>Exp ({barrelLenIn}"):</span>
             <span style={{ fontWeight: 700, color: '#3fb950' }}>{volumetrics.expansion_ratio_24in.toFixed(1)}:1</span>
           </div>
 
@@ -107,7 +123,7 @@ export const VolumetricHUD: React.FC<VolumetricHUDProps> = ({
         zIndex: 40,
       }}
     >
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '12px', alignItems: 'center' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', gap: '12px', alignItems: 'center' }}>
         {/* 1. Overflow Capacity */}
         <div
           style={{
@@ -123,7 +139,7 @@ export const VolumetricHUD: React.FC<VolumetricHUDProps> = ({
           <div style={{ color: 'var(--cad-cyan)' }}>
             <Droplet size={18} />
           </div>
-          <div>
+          <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600 }}>OVERFLOW CAPACITY</div>
             <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '14px', color: '#fff' }}>
               {volumetrics.overflow_capacity_grains_h2o} <span style={{ fontSize: '11px', color: 'var(--cad-cyan)' }}>gr H₂O</span>
@@ -134,7 +150,7 @@ export const VolumetricHUD: React.FC<VolumetricHUDProps> = ({
           </div>
         </div>
 
-        {/* 2. Usable Capacity */}
+        {/* 2. Usable Capacity & Bullet Displacement */}
         <div
           style={{
             background: 'var(--bg-card)',
@@ -149,18 +165,18 @@ export const VolumetricHUD: React.FC<VolumetricHUDProps> = ({
           <div style={{ color: 'var(--cad-brass)' }}>
             <Flame size={18} />
           </div>
-          <div>
+          <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600 }}>USABLE POWDER VOL</div>
             <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '14px', color: 'var(--cad-brass)' }}>
               {volumetrics.usable_capacity_grains_h2o} <span style={{ fontSize: '11px' }}>gr H₂O</span>
             </div>
             <div style={{ fontSize: '10px', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
-              {volumetrics.usable_capacity_cm3} cm³ (w/ bullet)
+              {volumetrics.usable_capacity_cm3} cm³ • Disp -{volumetrics.bullet_displacement_grains_h2o} gr
             </div>
           </div>
         </div>
 
-        {/* 3. Bullet Displacement */}
+        {/* 3. C26000 Brass Case Weight */}
         <div
           style={{
             background: 'var(--bg-card)',
@@ -173,20 +189,20 @@ export const VolumetricHUD: React.FC<VolumetricHUDProps> = ({
           }}
         >
           <div style={{ color: 'var(--cad-copper)' }}>
-            <Target size={18} />
+            <Scale size={18} />
           </div>
-          <div>
-            <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600 }}>BULLET SEAT DISP</div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600 }}>BRASS CASE WEIGHT</div>
             <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '14px', color: 'var(--cad-copper)' }}>
-              {volumetrics.bullet_displacement_grains_h2o} <span style={{ fontSize: '11px' }}>gr H₂O</span>
+              {volumetrics.brass_case_weight_grains} <span style={{ fontSize: '11px' }}>gr</span>
             </div>
             <div style={{ fontSize: '10px', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
-              Depth: {cartridge.seating_depth.toFixed(3)}"
+              {volumetrics.brass_case_weight_grams} g • Seat {cartridge.seating_depth.toFixed(3)}"
             </div>
           </div>
         </div>
 
-        {/* 4. Sectional Density */}
+        {/* 4. Sectional Density & Ballistic Coefficient */}
         <div
           style={{
             background: 'var(--bg-card)',
@@ -201,18 +217,18 @@ export const VolumetricHUD: React.FC<VolumetricHUDProps> = ({
           <div style={{ color: 'var(--cad-blue)' }}>
             <Compass size={18} />
           </div>
-          <div>
+          <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600 }}>SECTIONAL DENSITY</div>
             <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '14px', color: '#fff' }}>
               {volumetrics.sectional_density.toFixed(3)}
             </div>
             <div style={{ fontSize: '10px', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
-              Est. G1 BC: ~{volumetrics.g1_bc_est.toFixed(3)}
+              G1 ~{volumetrics.g1_bc_est.toFixed(3)} • G7 ~{volumetrics.g7_bc_est.toFixed(3)}
             </div>
           </div>
         </div>
 
-        {/* 5. Expansion Ratio */}
+        {/* 5. Expansion Ratio & Rifled Bore Area (with Barrel Length Selector) */}
         <div
           style={{
             background: 'var(--bg-card)',
@@ -227,13 +243,39 @@ export const VolumetricHUD: React.FC<VolumetricHUDProps> = ({
           <div style={{ color: '#3fb950' }}>
             <Zap size={18} />
           </div>
-          <div>
-            <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600 }}>EXPANSION RATIO</div>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600 }}>EXPANSION</span>
+              {onChangeBarrelLength && (
+                <select
+                  aria-label="Barrel Length"
+                  value={barrelLenIn}
+                  onChange={(e) => onChangeBarrelLength(Number(e.target.value))}
+                  style={{
+                    background: 'var(--bg-tertiary)',
+                    color: '#3fb950',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '3px',
+                    fontSize: '9.5px',
+                    fontFamily: 'var(--font-mono)',
+                    fontWeight: 700,
+                    padding: '0 3px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {BARREL_LENGTH_OPTIONS.map((len) => (
+                    <option key={len} value={len}>
+                      {isMetric ? `${Math.round(len * 25.4)}mm` : `${len}"`}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
             <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '14px', color: '#3fb950' }}>
               {volumetrics.expansion_ratio_24in.toFixed(1)}:1
             </div>
-            <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>
-              24" Standard Barrel
+            <div style={{ fontSize: '10px', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
+              Bore: {boreAreaText}
             </div>
           </div>
         </div>
@@ -250,11 +292,11 @@ export const VolumetricHUD: React.FC<VolumetricHUDProps> = ({
             justifyContent: 'space-between',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
             <div style={{ color: '#f85149' }}>
               <Gauge size={18} />
             </div>
-            <div>
+            <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600 }}>MAX PRESSURE (PMAX)</div>
               <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '14px', color: '#f85149' }}>
                 {pressureBar.toLocaleString()} <span style={{ fontSize: '11px' }}>bar</span>

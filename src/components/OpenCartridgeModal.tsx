@@ -474,13 +474,13 @@ export const OpenCartridgeModal: React.FC<OpenCartridgeModalProps> = ({
               type="file"
               ref={fileInputRef}
               onChange={handleFileImport}
-              accept=".wildcat,.wcs,.vol,.json,.loadbench,.ldb"
+              accept=".wildcat,.wcs,.grtload,.xml,.vol,.json,.loadbench,.ldb"
               style={{ display: 'none' }}
             />
             <button
               id="btn-import-cartridge-file"
               onClick={() => fileInputRef.current?.click()}
-              title="Import .wildcat, .wcs, .vol, .loadbench, or .json cartridge specification from disk"
+              title="Import .wildcat, .wcs, .grtload, .vol, .loadbench, or .json cartridge specification from disk"
               style={{
                 background: 'var(--bg-card)',
                 border: '1px solid var(--border-color)',
@@ -497,7 +497,7 @@ export const OpenCartridgeModal: React.FC<OpenCartridgeModalProps> = ({
               }}
             >
               <Upload size={12} />
-              <span>Import File (.wildcat/.wcs/.vol/.json)</span>
+              <span>Import File (.wildcat/.grtload/.vol/.json)</span>
             </button>
 
             <button

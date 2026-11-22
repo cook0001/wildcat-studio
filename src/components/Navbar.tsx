@@ -82,7 +82,9 @@ interface NavbarProps {
   onExportWildcat?: () => void;
   onExportLoadBench?: () => void;
   onExportRangeStudio?: () => void;
+  onExportGrtLoad?: () => void;
   onExportQuickload: () => void;
+  onExportQuickloadBul?: () => void;
   onExportDxf: () => void;
   onExportStl: () => void;
   onReset: () => void;
@@ -139,7 +141,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   onExportWildcat,
   onExportLoadBench,
   onExportRangeStudio,
+  onExportGrtLoad,
   onExportQuickload,
+  onExportQuickloadBul,
   onExportDxf,
   onExportStl,
   onReset,
@@ -356,6 +360,19 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </div>
 
                 <div 
+                  id="menu-item-export-grtload"
+                  style={dropdownItemStyle}
+                  onClick={() => { closeMenu(); onExportGrtLoad?.(); }}
+                  onMouseEnter={handleItemHover}
+                  onMouseLeave={handleItemLeave}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <FileText size={14} color="#a78bfa" />
+                    <span>Export GRT Load Project (.grtload XML)</span>
+                  </div>
+                </div>
+
+                <div 
                   id="menu-item-export-universal-qdf"
                   style={dropdownItemStyle}
                   onClick={() => { closeMenu(); onExportQuickLoadQdf?.(); }}
@@ -376,7 +393,20 @@ export const Navbar: React.FC<NavbarProps> = ({
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <FileText size={14} color="var(--text-secondary)" />
-                    <span>Export Volumetric Capacity (.vol)</span>
+                    <span>Export QuickLOAD Capacity (.vol)</span>
+                  </div>
+                </div>
+
+                <div 
+                  id="menu-item-export-bul"
+                  style={dropdownItemStyle}
+                  onClick={() => { closeMenu(); onExportQuickloadBul?.(); }}
+                  onMouseEnter={handleItemHover}
+                  onMouseLeave={handleItemLeave}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <FileText size={14} color="var(--cad-brass)" />
+                    <span>Export QuickLOAD / GRT Bullet (.bul)</span>
                   </div>
                 </div>
 

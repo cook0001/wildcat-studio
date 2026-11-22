@@ -9,11 +9,13 @@ import {
   getOuterRadiusAt,
   getInnerRadiusAt,
   getChamberRadiusAt,
+  getBulletRadiusAt,
   isStraightWall,
   calculateVolumetrics,
   calculateReamerSpecs,
   calculateDatumHeadspace,
   calculateCIPDeltaL,
+  analyzeChamberCollision,
   effectiveShoulderLength,
 } from '../utils/volumetrics';
 import { buildClosedSvgContour } from '../utils/cartridgeHelpers';
@@ -31,6 +33,8 @@ import {
   Shield,
   ChevronDown,
   ChevronUp,
+  AlertTriangle,
+  CheckCircle2,
 } from 'lucide-react';
 import { BlueprintToolbar, DrawingMode } from './blueprint/BlueprintToolbar';
 import { LittleBoySvg } from './blueprint/LittleBoySvg';
@@ -170,17 +174,33 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
     return localStorage.getItem('wildcat_helper_dismissed') === 'true';
   });
 
+  const activeVol = useMemo(
+    () => propVolumetrics ?? calculateVolumetrics(cartridge),
+    [propVolumetrics, cartridge]
+  );
+  const ghostVol = useMemo(
+    () => (ghostCartridge ? calculateVolumetrics(ghostCartridge) : null),
+    [ghostCartridge]
+  );
+  const reamer = useMemo(() => calculateReamerSpecs(cartridge), [cartridge]);
+  const datumHeadspace = useMemo(() => calculateDatumHeadspace(cartridge), [cartridge]);
+  const cipDeltaL = useMemo(() => calculateCIPDeltaL(cartridge), [cartridge]);
+  const collision = useMemo(
+    () => analyzeChamberCollision(cartridge, reamer),
+    [cartridge, reamer]
+  );
+
   const getReamerClearanceForKey = (key: keyof CartridgeSpec, type: 'diameter' | 'length'): number => {
     switch (key) {
-      case 'rim_diameter': return 0.0050;
-      case 'rim_thickness': return 0.0030;
-      case 'base_diameter':
-      case 'shoulder_start_diameter': return 0.0020;
+      case 'rim_diameter': return reamer.chamber_rim_dia - cartridge.rim_diameter;
+      case 'rim_thickness': return reamer.chamber_rim_depth - cartridge.rim_thickness;
+      case 'base_diameter': return reamer.chamber_base_dia - cartridge.base_diameter;
+      case 'shoulder_start_diameter': return reamer.chamber_shoulder_dia - cartridge.shoulder_start_diameter;
       case 'neck_diameter_base':
-      case 'neck_diameter_mouth': return 0.0030;
-      case 'bullet_diameter': return 0.0005;
-      case 'case_length': return 0.0150;
-      default: return type === 'diameter' ? 0.0020 : 0.0050;
+      case 'neck_diameter_mouth': return reamer.chamber_neck_dia - cartridge.neck_diameter_mouth;
+      case 'bullet_diameter': return reamer.freebore_dia - cartridge.bullet_diameter;
+      case 'case_length': return reamer.chamber_length - cartridge.case_length;
+      default: return type === 'diameter' ? 0.0020 : reamer.headspace_clearance;
     }
   };
 
@@ -488,18 +508,6 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
     setPan({ x: 0, y: 0 });
   };
 
-  const activeVol = useMemo(
-    () => propVolumetrics ?? calculateVolumetrics(cartridge),
-    [propVolumetrics, cartridge]
-  );
-  const ghostVol = useMemo(
-    () => (ghostCartridge ? calculateVolumetrics(ghostCartridge) : null),
-    [ghostCartridge]
-  );
-  const reamer = useMemo(() => calculateReamerSpecs(cartridge), [cartridge]);
-  const datumHeadspace = useMemo(() => calculateDatumHeadspace(cartridge), [cartridge]);
-  const cipDeltaL = useMemo(() => calculateCIPDeltaL(cartridge), [cartridge]);
-
   const { rRim, outerBottomPath, outerClosedPath, outerCutawayClosedPath } = useMemo(() => {
     const steps = 100;
     const dz = cartridge.case_length / steps;
@@ -633,8 +641,70 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
   }, [needsChamber, cartridge, reamer, originX, centerY, scale, zChamberEnd]);
 
   const zBulletTip = originX + cartridge.coal * scale;
-  const zBulletBase = originX + (cartridge.coal - cartridge.bullet_length) * scale;
   const rBullet = (cartridge.bullet_diameter / 2) * scale;
+
+  const {
+    bulletClosedPath,
+    bulletTopHalfPath,
+    bulletBottomHalfPath,
+    bulletWireSeatedPath,
+    bulletWireExposedPath,
+  } = useMemo(() => {
+    const bulletLen = Math.max(0.05, cartridge.bullet_length);
+    const zBaseIn = cartridge.coal - bulletLen;
+    const steps = 60;
+    const pts: [number, number][] = [];
+    const seatedPts: [number, number][] = [];
+    const exposedPts: [number, number][] = [];
+
+    for (let i = 0; i <= steps; i++) {
+      const x = (i / steps) * bulletLen;
+      const zIn = zBaseIn + x;
+      const px = originX + zIn * scale;
+      const r = getBulletRadiusAt(cartridge, x) * scale;
+      pts.push([px, r]);
+      if (zIn <= cartridge.case_length + 1e-5) {
+        seatedPts.push([px, r]);
+      }
+      if (zIn >= cartridge.case_length - 1e-5) {
+        exposedPts.push([px, r]);
+      }
+    }
+
+    const closedPath = buildClosedSvgContour(
+      pts,
+      (px, signedR) => `${px} ${centerY + signedR}`
+    );
+
+    const topSegs = pts.map(([px, r]) => `L ${px} ${centerY - r}`).join(' ');
+    const topHalfPath = `M ${pts[0][0]} ${centerY} ${topSegs} L ${pts[pts.length - 1][0]} ${centerY} Z`;
+
+    const botRevSegs = [...pts].reverse().map(([px, r]) => `L ${px} ${centerY + r}`).join(' ');
+    const bottomHalfPath = `M ${pts[0][0]} ${centerY} L ${pts[pts.length - 1][0]} ${centerY} ${botRevSegs} Z`;
+
+    let wireSeated = '';
+    if (seatedPts.length >= 2) {
+      const sTop = `M ${seatedPts[0][0]} ${centerY - seatedPts[0][1]} ` + seatedPts.slice(1).map(([px, r]) => `L ${px} ${centerY - r}`).join(' ');
+      const sBot = `M ${seatedPts[0][0]} ${centerY + seatedPts[0][1]} ` + seatedPts.slice(1).map(([px, r]) => `L ${px} ${centerY + r}`).join(' ');
+      const sBase = `M ${seatedPts[0][0]} ${centerY - seatedPts[0][1]} L ${seatedPts[0][0]} ${centerY + seatedPts[0][1]}`;
+      wireSeated = `${sTop} ${sBot} ${sBase}`;
+    }
+
+    let wireExposed = '';
+    if (exposedPts.length >= 2) {
+      const eTop = `M ${exposedPts[0][0]} ${centerY - exposedPts[0][1]} ` + exposedPts.slice(1).map(([px, r]) => `L ${px} ${centerY - r}`).join(' ');
+      const eBot = `M ${exposedPts[0][0]} ${centerY + exposedPts[0][1]} ` + exposedPts.slice(1).map(([px, r]) => `L ${px} ${centerY + r}`).join(' ');
+      wireExposed = `${eTop} ${eBot}`;
+    }
+
+    return {
+      bulletClosedPath: closedPath,
+      bulletTopHalfPath: topHalfPath,
+      bulletBottomHalfPath: bottomHalfPath,
+      bulletWireSeatedPath: wireSeated,
+      bulletWireExposedPath: wireExposed,
+    };
+  }, [cartridge, originX, centerY, scale]);
 
   const effectiveShoulderLen = effectiveShoulderLength(cartridge);
   const pxRim = originX + cartridge.rim_thickness * scale;
@@ -929,12 +999,19 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
 
       {/* Floating Chamber Clearance & Fit Telemetry HUD */}
       {(activeDrawingMode === 'chamber_fit' || activeShowChamber) && (() => {
-        const dNeck = reamer.chamber_neck_dia - cartridge.neck_diameter_mouth;
-        const dBase = reamer.chamber_base_dia - cartridge.base_diameter;
-        const fbJump = reamer.freebore_length;
-        const headspaceClearance = (cartridge.rim_type === 'rimmed' || cartridge.rim_type === 'rimfire')
-          ? reamer.chamber_rim_depth - cartridge.rim_thickness
-          : 0.004;
+        const dNeck = collision.neck_clearance_in;
+        const dBase = collision.base_clearance_in;
+        const jumpIn = collision.jump_to_lands_in;
+        const headspaceClearance = reamer.headspace_clearance;
+        const hasErrors = collision.has_interference;
+        const hasWarnings = !hasErrors && collision.issues.length > 0;
+        const hudBorderColor = hasErrors ? '#f85149' : hasWarnings ? '#f59e0b' : '#eab308';
+        const statusColor = hasErrors ? '#f87171' : hasWarnings ? '#fbbf24' : '#4ade80';
+        const statusLabel = hasErrors ? 'INTERFERENCE' : hasWarnings ? 'WARN' : 'FIT OK';
+        const issueTooltip = collision.issues.length > 0
+          ? collision.issues.map((i) => `[${i.severity.toUpperCase()} - ${i.zone}] ${i.message}`).join('\n')
+          : 'No radial or throat interference detected across 200 stations.';
+        const fmtSigned = (v: number, prec = 4) => `${v >= 0 ? '+' : '-'}${fmt(Math.abs(v), prec)}`;
 
         if (isChamberHudDismissed) {
           return (
@@ -951,12 +1028,12 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
                 background: 'rgba(15, 20, 31, 0.92)',
                 WebkitBackdropFilter: 'blur(8px)',
                 backdropFilter: 'blur(8px)',
-                border: '1px solid #eab308',
+                border: `1px solid ${hudBorderColor}`,
                 borderRadius: '6px',
                 padding: '4px 10px',
                 fontSize: '11px',
                 fontWeight: 600,
-                color: '#eab308',
+                color: hudBorderColor,
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
@@ -971,8 +1048,8 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
                 e.currentTarget.style.background = 'rgba(15, 20, 31, 0.92)';
               }}
             >
-              <Shield size={12} color="#eab308" />
-              <span>Chamber Fit Telemetry</span>
+              <Shield size={12} color={hudBorderColor} />
+              <span>Chamber Fit ({statusLabel})</span>
             </button>
           );
         }
@@ -990,118 +1067,125 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
               background: 'rgba(15, 20, 31, 0.96)',
               WebkitBackdropFilter: 'blur(14px)',
               backdropFilter: 'blur(14px)',
-              border: '1.5px solid #eab308',
+              border: `1.5px solid ${hudBorderColor}`,
               borderRadius: '8px',
               padding: isChamberHudCollapsed ? '4px 10px' : '6px 14px',
-              boxShadow: '0 8px 30px rgba(0, 0, 0, 0.7), 0 0 16px rgba(234, 179, 8, 0.25)',
+              boxShadow: hasErrors
+                ? '0 8px 30px rgba(0, 0, 0, 0.75), 0 0 18px rgba(248, 81, 73, 0.35)'
+                : '0 8px 30px rgba(0, 0, 0, 0.7), 0 0 16px rgba(234, 179, 8, 0.25)',
               display: 'flex',
-              alignItems: 'center',
-              gap: isChamberHudCollapsed ? '8px' : '12px',
+              flexDirection: 'column',
+              gap: '4px',
               fontSize: '11px',
               color: '#fff',
               userSelect: 'none',
+              maxWidth: '92vw',
             }}
           >
-            {/* Drag Handle */}
-            <div
-              onMouseDown={handleChamberHudMouseDown}
-              onDoubleClick={() => setChamberHudPos(null)}
-              title="Drag to reposition Chamber Fit HUD (Double-click to reset position)"
-              style={{
-                cursor: isDraggingChamberHud ? 'grabbing' : 'grab',
-                color: 'var(--text-muted)',
-                display: 'flex',
-                alignItems: 'center',
-                padding: '2px 0',
-              }}
-            >
-              <GripVertical size={13} />
-            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: isChamberHudCollapsed ? '8px' : '11px' }}>
+              {/* Drag Handle */}
+              <div
+                onMouseDown={handleChamberHudMouseDown}
+                onDoubleClick={() => setChamberHudPos(null)}
+                title="Drag to reposition Chamber Fit HUD (Double-click to reset position)"
+                style={{
+                  cursor: isDraggingChamberHud ? 'grabbing' : 'grab',
+                  color: 'var(--text-muted)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: '2px 0',
+                }}
+              >
+                <GripVertical size={13} />
+              </div>
 
-            {/* Title / Summary */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Shield size={14} color="#eab308" />
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ fontWeight: 700, color: '#eab308' }}>Chamber Fit</span>
-                {!isChamberHudCollapsed && (
-                  <span style={{ color: 'var(--text-secondary)', fontSize: '10px' }}>({activeStandard.toUpperCase()})</span>
+              {/* Title & Collision Status Pill */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }} title={issueTooltip}>
+                {hasErrors || hasWarnings ? (
+                  <AlertTriangle size={14} color={statusColor} />
+                ) : (
+                  <CheckCircle2 size={14} color={statusColor} />
                 )}
+                <span style={{ fontWeight: 700, color: '#eab308' }}>Chamber</span>
+                <span style={{
+                  fontSize: '9.5px',
+                  fontWeight: 700,
+                  fontFamily: 'var(--font-mono)',
+                  padding: '1px 5px',
+                  borderRadius: '3px',
+                  color: statusColor,
+                  background: hasErrors ? 'rgba(248, 81, 73, 0.18)' : hasWarnings ? 'rgba(245, 158, 11, 0.18)' : 'rgba(74, 222, 128, 0.15)',
+                  border: `1px solid ${statusColor}55`,
+                }}>
+                  {statusLabel}
+                </span>
               </div>
-            </div>
 
-            <div style={{ width: '1px', height: '14px', background: 'rgba(234, 179, 8, 0.3)' }} />
+              <div style={{ width: '1px', height: '14px', background: 'rgba(234, 179, 8, 0.3)' }} />
 
-            {/* Telemetry Numbers */}
-            {isChamberHudCollapsed ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'var(--font-mono)', fontSize: '10.5px' }}>
-                <span style={{ color: 'var(--text-muted)' }}>ΔNeck:</span>
-                <span style={{ color: dNeck >= 0.002 ? '#4ade80' : '#f87171', fontWeight: 700 }}>+{fmt(dNeck, 4)}</span>
-                <span style={{ color: 'var(--text-muted)' }}>ΔBase:</span>
-                <span style={{ color: dBase >= 0.001 ? '#4ade80' : '#f87171', fontWeight: 700 }}>+{fmt(dBase, 4)}</span>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontFamily: 'var(--font-mono)', fontSize: '10.5px' }}>
-                <div>
-                  <span style={{ color: 'var(--text-muted)' }}>Δ Neck: </span>
-                  <span style={{ color: dNeck >= 0.002 ? '#4ade80' : '#f87171', fontWeight: 700 }}>
-                    +{fmt(dNeck, 4)}
+              {/* Telemetry Numbers */}
+              {isChamberHudCollapsed ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'var(--font-mono)', fontSize: '10.5px' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>ΔNeck:</span>
+                  <span style={{ color: dNeck >= 0.002 ? '#4ade80' : dNeck >= 0 ? '#fbbf24' : '#f87171', fontWeight: 700 }}>{fmtSigned(dNeck, 4)}</span>
+                  <span style={{ color: 'var(--text-muted)' }}>Jump:</span>
+                  <span style={{ color: jumpIn >= 0 ? '#38bdf8' : '#f87171', fontWeight: 700 }}>
+                    {jumpIn >= 0 ? fmtSigned(jumpIn, 3) : `JAM ${fmtSigned(jumpIn, 3)}`}
                   </span>
                 </div>
-                <div>
-                  <span style={{ color: 'var(--text-muted)' }}>Δ Base: </span>
-                  <span style={{ color: dBase >= 0.001 ? '#4ade80' : '#f87171', fontWeight: 700 }}>
-                    +{fmt(dBase, 4)}
-                  </span>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontFamily: 'var(--font-mono)', fontSize: '10.5px', flexWrap: 'wrap' }}>
+                  <div>
+                    <span style={{ color: 'var(--text-muted)' }}>ΔNeck: </span>
+                    <span style={{ color: dNeck >= 0.002 ? '#4ade80' : dNeck >= 0 ? '#fbbf24' : '#f87171', fontWeight: 700 }}>
+                      {fmtSigned(dNeck, 4)}
+                    </span>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--text-muted)' }}>ΔBase: </span>
+                    <span style={{ color: dBase >= 0.001 ? '#4ade80' : dBase >= 0 ? '#fbbf24' : '#f87171', fontWeight: 700 }}>
+                      {fmtSigned(dBase, 4)}
+                    </span>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--text-muted)' }}>HS: </span>
+                    <span style={{ color: '#4ade80', fontWeight: 700 }}>
+                      +{fmt(headspaceClearance, 4)}
+                    </span>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--text-muted)' }}>Jump: </span>
+                    <span style={{ color: jumpIn >= 0.015 ? '#38bdf8' : jumpIn >= 0 ? '#fbbf24' : '#f87171', fontWeight: 700 }}>
+                      {jumpIn >= 0 ? fmtSigned(jumpIn, 3) : `JAM ${fmtSigned(jumpIn, 3)}`}
+                    </span>
+                  </div>
+                  <div title={`Cartridge Base to Ogive (CBTO): ${fmt(collision.cbto_in, 3)}`}>
+                    <span style={{ color: 'var(--text-muted)' }}>Jam COAL: </span>
+                    <span style={{ color: '#e2e8f0', fontWeight: 600 }}>
+                      {fmt(collision.jam_coal_in, 3)}
+                    </span>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--text-muted)' }}>CBTO: </span>
+                    <span style={{ color: '#cbd5e1', fontWeight: 600 }}>
+                      {fmt(collision.cbto_in, 3)}
+                    </span>
+                  </div>
                 </div>
-                <div>
-                  <span style={{ color: 'var(--text-muted)' }}>Headspace: </span>
-                  <span style={{ color: '#4ade80', fontWeight: 700 }}>
-                    +{fmt(headspaceClearance, 4)}
-                  </span>
-                </div>
-                <div>
-                  <span style={{ color: 'var(--text-muted)' }}>Freebore: </span>
-                  <span style={{ color: '#38bdf8', fontWeight: 700 }}>
-                    {fmt(fbJump, 3)}
-                  </span>
-                </div>
-              </div>
-            )}
+              )}
 
-            <div style={{ width: '1px', height: '14px', background: 'rgba(234, 179, 8, 0.3)' }} />
+              <div style={{ width: '1px', height: '14px', background: 'rgba(234, 179, 8, 0.3)' }} />
 
-            {/* Collapse/Expand Toggle */}
-            <button
-              onClick={() => {
-                setIsChamberHudCollapsed((prev) => {
-                  const next = !prev;
-                  localStorage.setItem('wildcat_chamber_hud_collapsed', String(next));
-                  return next;
-                });
-              }}
-              title={isChamberHudCollapsed ? "Expand Telemetry" : "Collapse Telemetry"}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--text-muted)',
-                cursor: 'pointer',
-                padding: '2px',
-                display: 'flex',
-                alignItems: 'center',
-                borderRadius: '3px',
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = '#fff')}
-              onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
-            >
-              {isChamberHudCollapsed ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-            </button>
-
-            {/* Reset to Default Position */}
-            {chamberHudPos && (
+              {/* Collapse/Expand Toggle */}
               <button
-                type="button"
-                onClick={() => setChamberHudPos(null)}
-                title="Reset HUD to default position"
+                onClick={() => {
+                  setIsChamberHudCollapsed((prev) => {
+                    const next = !prev;
+                    localStorage.setItem('wildcat_chamber_hud_collapsed', String(next));
+                    return next;
+                  });
+                }}
+                title={isChamberHudCollapsed ? "Expand Telemetry" : "Collapse Telemetry"}
                 style={{
                   background: 'transparent',
                   border: 'none',
@@ -1112,32 +1196,78 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
                   alignItems: 'center',
                   borderRadius: '3px',
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.color = '#eab308')}
+                onMouseEnter={(e) => (e.currentTarget.style.color = '#fff')}
                 onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
               >
-                <Crosshair size={12} />
+                {isChamberHudCollapsed ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
               </button>
-            )}
 
-            {/* Dismiss Button */}
-            <button
-              onClick={() => setIsChamberHudDismissed(true)}
-              title="Close Chamber Fit HUD"
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--text-muted)',
-                cursor: 'pointer',
-                padding: '2px',
-                display: 'flex',
-                alignItems: 'center',
-                borderRadius: '3px',
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = '#fff')}
-              onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
-            >
-              <X size={13} />
-            </button>
+              {/* Reset to Default Position */}
+              {chamberHudPos && (
+                <button
+                  type="button"
+                  onClick={() => setChamberHudPos(null)}
+                  title="Reset HUD to default position"
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--text-muted)',
+                    cursor: 'pointer',
+                    padding: '2px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    borderRadius: '3px',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = '#eab308')}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
+                >
+                  <Crosshair size={12} />
+                </button>
+              )}
+
+              {/* Dismiss Button */}
+              <button
+                onClick={() => setIsChamberHudDismissed(true)}
+                title="Close Chamber Fit HUD"
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: '2px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  borderRadius: '3px',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = '#fff')}
+                onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
+              >
+                <X size={13} />
+              </button>
+            </div>
+
+            {!isChamberHudCollapsed && collision.issues.length > 0 && (
+              <div
+                title={issueTooltip}
+                style={{
+                  borderTop: `1px solid ${statusColor}33`,
+                  paddingTop: '3px',
+                  fontSize: '10px',
+                  color: statusColor,
+                  fontFamily: 'var(--font-mono)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                <span>{collision.issues[0].message}</span>
+                {collision.issues.length > 1 && (
+                  <span style={{ color: 'var(--text-muted)' }}>
+                    (+{collision.issues.length - 1} more)
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         );
       })()}
@@ -1629,49 +1759,37 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
                 {activeDrawingMode === 'wireframe' ? (
                   <>
                     {/* Seated shank hidden inside neck */}
-                    <path
-                      d={`M ${zBulletBase} ${centerY - rBullet} L ${pxMouth} ${centerY - rBullet} M ${zBulletBase} ${centerY + rBullet} L ${pxMouth} ${centerY + rBullet} M ${zBulletBase} ${centerY - rBullet} L ${zBulletBase} ${centerY + rBullet}`}
-                      fill="none"
-                      stroke="var(--cad-copper)"
-                      strokeWidth="1.4"
-                      strokeDasharray="4,2"
-                    />
+                    {bulletWireSeatedPath && (
+                      <path
+                        d={bulletWireSeatedPath}
+                        fill="none"
+                        stroke="var(--cad-copper)"
+                        strokeWidth="1.4"
+                        strokeDasharray="4,2"
+                      />
+                    )}
                     {/* Exposed ogive / nose */}
-                    <path
-                      d={`
-                        M ${pxMouth} ${centerY - rBullet}
-                        Q ${(pxMouth + pxTip) / 2} ${centerY - rBullet}, ${pxTip} ${centerY}
-                        Q ${(pxMouth + pxTip) / 2} ${centerY + rBullet}, ${pxMouth} ${centerY + rBullet}
-                      `}
-                      fill="none"
-                      stroke="var(--cad-copper)"
-                      strokeWidth="1.6"
-                    />
+                    {bulletWireExposedPath && (
+                      <path
+                        d={bulletWireExposedPath}
+                        fill="none"
+                        stroke="var(--cad-copper)"
+                        strokeWidth="1.6"
+                      />
+                    )}
                   </>
                 ) : activeDrawingMode === 'half_section' ? (
                   <>
                     {/* Top half bullet: cutaway solid copper */}
                     <path
-                      d={`
-                        M ${zBulletBase} ${centerY - rBullet}
-                        L ${pxMouth} ${centerY - rBullet}
-                        Q ${(pxMouth + pxTip) / 2} ${centerY - rBullet}, ${pxTip} ${centerY}
-                        L ${zBulletBase} ${centerY}
-                        Z
-                      `}
+                      d={bulletTopHalfPath}
                       fill="url(#copperGradient)"
                       stroke="var(--cad-copper)"
                       strokeWidth="1.6"
                     />
                     {/* Bottom half bullet: exterior copper */}
                     <path
-                      d={`
-                        M ${zBulletBase} ${centerY}
-                        L ${pxTip} ${centerY}
-                        Q ${(pxMouth + pxTip) / 2} ${centerY + rBullet}, ${pxMouth} ${centerY + rBullet}
-                        L ${zBulletBase} ${centerY + rBullet}
-                        Z
-                      `}
+                      d={bulletBottomHalfPath}
                       fill="rgba(240, 136, 62, 0.25)"
                       stroke="var(--cad-copper)"
                       strokeWidth="1.6"
@@ -1680,14 +1798,7 @@ export const BlueprintCanvas: React.FC<BlueprintCanvasProps> = ({
                 ) : (
                   /* Standard outline / cutaway / chamber_fit bullet */
                   <path
-                    d={`
-                      M ${zBulletBase} ${centerY - rBullet}
-                      L ${pxMouth} ${centerY - rBullet}
-                      Q ${(pxMouth + pxTip) / 2} ${centerY - rBullet}, ${pxTip} ${centerY}
-                      Q ${(pxMouth + pxTip) / 2} ${centerY + rBullet}, ${pxMouth} ${centerY + rBullet}
-                      L ${zBulletBase} ${centerY + rBullet}
-                      Z
-                    `}
+                    d={bulletClosedPath}
                     fill={activeDrawingMode === 'cutaway' ? 'url(#copperGradient)' : 'rgba(240, 136, 62, 0.2)'}
                     stroke="var(--cad-copper)"
                     strokeWidth="1.6"

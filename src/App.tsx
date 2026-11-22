@@ -3,6 +3,8 @@ import { CartridgeSpec, CARTRIDGE_PRESETS, VolumetricResult, DraftingStandard, T
 import { 
   calculateVolumetricsFrontend, 
   exportUniversalQDF,
+  exportQuickloadBul,
+  exportGrtLoadXml,
   exportWildcatSpec,
   exportLoadBenchRecipe,
   exportRangeStudioBallistics,
@@ -334,16 +336,40 @@ function AppContent() {
       'LoadBench Recipe Exported'
     );
 
-  const handleExportQuickload = async () =>
+  const handleExportQuickload = () =>
     exportAndNotify(
       {
         defaultFileName: `${safeBaseName}.vol`,
         filters: [{ name: 'QuickLOAD Volumetric Data', extensions: ['vol', 'txt'] }],
-        content: await buildQuickloadVol(cartridge),
+        content: buildQuickloadVol(cartridge),
         mimeType: 'text/plain;charset=utf-8',
         title: 'Export QuickLOAD Volumetric Data',
       },
       'QuickLOAD Data Exported'
+    );
+
+  const handleExportQuickloadBul = () =>
+    exportAndNotify(
+      {
+        defaultFileName: `${safeBaseName}.bul`,
+        filters: [{ name: 'QuickLOAD / GRT Bullet File', extensions: ['bul', 'txt'] }],
+        content: exportQuickloadBul(cartridge),
+        mimeType: 'text/plain;charset=utf-8',
+        title: 'Export QuickLOAD / GRT Bullet Specification',
+      },
+      'Bullet File Exported'
+    );
+
+  const handleExportGrtLoad = () =>
+    exportAndNotify(
+      {
+        defaultFileName: `${safeBaseName}.grtload`,
+        filters: [{ name: 'Gordon\'s Reloading Tool Project', extensions: ['grtload', 'xml'] }],
+        content: exportGrtLoadXml(cartridge),
+        mimeType: 'application/xml;charset=utf-8',
+        title: 'Export Gordon\'s Reloading Tool Project (.grtload)',
+      },
+      'GRT Load Project Exported'
     );
 
   const handleExportQuickLoadQdf = () =>
@@ -370,12 +396,12 @@ function AppContent() {
       'RangeStudio Profile Exported'
     );
 
-  const handleExportDxf = async () =>
+  const handleExportDxf = () =>
     exportAndNotify(
       {
         defaultFileName: `${cartridge.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}.dxf`,
         filters: [{ name: 'AutoCAD DXF Drawing', extensions: ['dxf'] }],
-        content: await buildDxfDrawing(cartridge),
+        content: buildDxfDrawing(cartridge),
         mimeType: 'application/dxf',
         title: 'Export AutoCAD DXF Drawing',
       },
@@ -470,7 +496,9 @@ function AppContent() {
         onExportWildcat={handleExportWildcat}
         onExportLoadBench={handleExportLoadBench}
         onExportRangeStudio={handleExportRangeStudio}
+        onExportGrtLoad={handleExportGrtLoad}
         onExportQuickload={handleExportQuickload}
+        onExportQuickloadBul={handleExportQuickloadBul}
         onExportQuickLoadQdf={handleExportQuickLoadQdf}
         onExportDxf={handleExportDxf}
         onExportStl={handleExportStl}
@@ -612,6 +640,8 @@ function AppContent() {
       <VolumetricHUD
         volumetrics={volumetrics}
         cartridge={cartridge}
+        isMetric={isMetric}
+        onChangeBarrelLength={(len) => setCartridge({ ...cartridge, barrel_length_in: len })}
       />
 
       {/* Save Custom Cartridge Modal */}
